@@ -74,16 +74,19 @@ void *output_monitor(void *param) {
 	FD_SET(p->output, &read_set);
 	FD_SET(p->output, &except_set);
 
-#if 0
+	if (!(output = fdopen(p->output, "r"))) {
+		fprintf(stderr, "Cannot do fdopen() for output!\n");
+		return NULL;
+	}
+
 	if (!(global_output = fdopen(global_pipe[1], "w"))) {
 		fprintf(stderr, "Cannot do fdopen() for global_output\n"); 
 		return NULL;
 	}
-#endif
 	DEBUG("Starting output monitor for %s.\n", p->tag);
 
 	while (!will_break) {
-		char buffer[80] = {0,};
+		char buffer[LINE_BUFFER_SIZE+1] = {0,};
 		struct timeval timeout;
 		int read_size = 0;
 
@@ -101,24 +104,23 @@ void *output_monitor(void *param) {
 
 		if (FD_ISSET(p->output, &read_set)) {
 			char *newline = "\n";
-			if ((read_size = read(p->output, buffer, 79)) == 0)
+			if (fgets(buffer, LINE_BUFFER_SIZE, output) == NULL)
 				break;
 
-			DEBUG("buffer: %s\n", buffer);
+			DEBUG("buffer: %s-\n", buffer);
+#if 0
 			write(global_pipe[1], p->tag, strlen(p->tag));
 			write(global_pipe[1], buffer, read_size);
 			write(global_pipe[1], newline, strlen(newline));
-#if 0
-			fprintf(global_output, "%s:%s\n", p->tag, buffer);
-			fflush(global_output);
 #endif
+
+			fprintf(global_output, "%s:%s", p->tag, buffer);
+			fflush(global_output);
+#if DEBUG_MODE
 			fprintf(stderr, "stderr: %s:%s\n", p->tag, buffer);
 			fflush(stderr);
+#endif
 		}
-		else {
-			fprintf(stderr, "Not in the set.\n");
-		}
-			
 		FD_SET(p->output, &read_set);
 		FD_SET(p->output, &except_set);
 	}
@@ -352,12 +354,17 @@ out:
 }
 
 void handle_io_client(int client) {
-	FILE *global_output;
+	FILE *global_output, *client_output;
 	pipe2(global_pipe, O_CLOEXEC);
 	FD_SET(global_pipe[0], &global_set);
 
 	if (!(global_output = fdopen(global_pipe[0], "r"))) {
 		fprintf(stderr, "OOPS: Cannot open global output!\n");
+		return;
+	}
+
+	if (!(client_output = fdopen(client, "w"))) {
+		fprintf(stderr, "OOPS: Cannot open client output!\n");
 		return;
 	}
 
@@ -373,7 +380,9 @@ void handle_io_client(int client) {
 		DEBUG("Done global select()ing\n");
 		if (FD_ISSET(global_pipe[0], &global_set)) {
 			if (fgets(buffer, 80, global_output)) {
-				printf("OUTPUT: %s\n", buffer);
+				printf("OUTPUT: %s", buffer);
+				fprintf(client_output, "%s", buffer);
+				fflush(client_output);
 			} else {
 				fprintf(stderr, "Got EOF from fgets()\n");
 				break;
@@ -381,6 +390,7 @@ void handle_io_client(int client) {
 		}
 		FD_SET(global_pipe[0], &global_set);
 	}
+	fclose(client_output);
 	return;
 }
 
@@ -443,19 +453,20 @@ int main(int argc, char *argv[], char *envp[]) {
 		fprintf(stderr,"pthread_create(cmd_server_thread) failed.\n");
 		return 1;
 	}
-#if 0
+#ifdef GLOBAL_OUTPUT
 	if (pthread_create(&io_server_thread, NULL, io_listener, NULL)) {
 		/* error
 		 */
 		fprintf(stderr, "pthread_create(io_server_thread) failed.\n");
 		return 1;
 	}
-#endif
+#else
 	if (pthread_create(&io_server_thread, NULL, dummy_handle_io_client, NULL)) {
 		fprintf(stderr, "pthread_create(dummy_handle_io_client) failed.\n");
 		return 1;
 	}
 
+#endif
 	pthread_join(io_server_thread, &retval);
 	pthread_join(cmd_server_thread, &retval);
 }
