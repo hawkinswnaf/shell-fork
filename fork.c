@@ -1,11 +1,12 @@
-#include <stdio.h>
 #define _GNU_SOURCE
+#include <stdio.h>
 #include <unistd.h>
 #include <signal.h>
 #include <stdlib.h>
 #include <sys/types.h>
 #include <sys/select.h>
 #include <sys/socket.h>
+#include <sys/wait.h>
 #include <netinet/in.h>
 #include <pthread.h>
 #include <string.h>
@@ -58,7 +59,7 @@ int read_message(int client, char **message) {
 		message_len+=1;
 		message_idx+=1;
 
-		fprintf(stderr, "message: %s\n", *message);
+		DEBUG_3("message: %s\n", *message);
 	} while (1);
 	return 0;
 }
@@ -73,6 +74,8 @@ void *output_monitor(void *param) {
 	FD_ZERO(&except_set);
 	FD_SET(p->output, &read_set);
 	FD_SET(p->output, &except_set);
+	FD_SET(global_pipe[0], &except_set);
+	FD_SET(global_pipe[1], &except_set);
 
 	if (!(output = fdopen(p->output, "r"))) {
 		fprintf(stderr, "Cannot do fdopen() for output!\n");
@@ -83,7 +86,7 @@ void *output_monitor(void *param) {
 		fprintf(stderr, "Cannot do fdopen() for global_output\n"); 
 		return NULL;
 	}
-	DEBUG("Starting output monitor for %s.\n", p->tag);
+	DEBUG_2("Starting output monitor for %s.\n", p->tag);
 
 	while (!will_break) {
 		char buffer[LINE_BUFFER_SIZE+1] = {0,};
@@ -95,9 +98,11 @@ void *output_monitor(void *param) {
 
 		select(FD_SETSIZE, &read_set, NULL, &except_set, &timeout);
 		
-		DEBUG("Done output monitor select()ing\n");
+		DEBUG_3("Done output monitor select()ing\n");
 
-		if (FD_ISSET(p->output, &except_set)) {
+		if (FD_ISSET(p->output, &except_set) ||
+		    FD_ISSET(global_pipe[0], &except_set) ||
+		    FD_ISSET(global_pipe[1], &except_set)) {
 			fprintf(stderr, "Exception occurred!\n");
 			break;
 		}
@@ -107,7 +112,7 @@ void *output_monitor(void *param) {
 			if (fgets(buffer, LINE_BUFFER_SIZE, output) == NULL)
 				break;
 
-			DEBUG("buffer: %s-\n", buffer);
+			DEBUG_3("buffer: %s-\n", buffer);
 #if 0
 			write(global_pipe[1], p->tag, strlen(p->tag));
 			write(global_pipe[1], buffer, read_size);
@@ -116,20 +121,22 @@ void *output_monitor(void *param) {
 
 			fprintf(global_output, "%s:%s", p->tag, buffer);
 			fflush(global_output);
-#if DEBUG_MODE
+#ifdef DEBUG_MODE
 			fprintf(stderr, "stderr: %s:%s\n", p->tag, buffer);
 			fflush(stderr);
 #endif
 		}
 		FD_SET(p->output, &read_set);
 		FD_SET(p->output, &except_set);
+		FD_SET(global_pipe[0], &except_set);
+		FD_SET(global_pipe[1], &except_set);
 	}
 	remove_process(p);
 	
 	close(p->input);
 	close(p->output);
 	
-	DEBUG("Stopping output monitor for %s.\n", p->tag);
+	DEBUG_2("Stopping output monitor for %s.\n", p->tag);
 
 #ifdef DEBUG
 	print_processes();
@@ -145,7 +152,9 @@ void *threaded_wait_pid(void *arg) {
 
 	waitpid(p->pid, &status, 0);
 
-	DEBUG("Child (%d) finished: %d.\n", p->pid, status);
+	DEBUG_2("Child (%d) finished: %d.\n", p->pid, status);
+
+	return NULL;
 }
 
 void debug_tokenize_cmd(char **argv, int argc) {
@@ -178,7 +187,7 @@ void handle_stop_cmd(char *tag, char *extra) {
 	struct process *p = NULL;
 
 	if (p = find_process_by_tag(tag)) {
-		DEBUG("Found process to kill\n");
+		DEBUG_3("Found process to kill\n");
 		if (kill(p->pid, SIGINT)) {
 			fprintf(stderr, "kill() failed: %d\n", errno);
 		}
@@ -190,9 +199,9 @@ void handle_input_cmd(char *tag, char *extra) {
 	char *newline = "\n";
 
 	if (p = find_process_by_tag(tag)) {
-		DEBUG("INPUT extra: %s\n", extra);
-		DEBUG("p->input: %d\n", p->input);
-		DEBUG("p->output: %d\n", p->output);
+		DEBUG_3("INPUT extra: %s\n", extra);
+		DEBUG_3("p->input: %d\n", p->input);
+		DEBUG_3("p->output: %d\n", p->output);
 #if 0
 		//write(p->input, extra, strlen(extra));
 		//write(p->input, newline, strlen(newline));
@@ -221,7 +230,8 @@ void handle_start_cmd(char *tag, char *cmd) {
 	char **tokenized_cmd = NULL;
 	int tokenized_cmd_len = 0;
 
-	if (global_pipe[0] == -1 || global_pipe[1] == -1) {
+	if (global_pipe[0] == GLOBAL_PIPE_UNINITIALIZED || 
+	    global_pipe[1] == GLOBAL_PIPE_UNINITIALIZED) {
 		fprintf(stderr, "Cannot do commands without a listener.\n");
 		return;
 	}
@@ -233,14 +243,14 @@ void handle_start_cmd(char *tag, char *cmd) {
 	if (pipe(local_stdin_pipe)) 
 		fprintf(stderr, "pipe2(): %d", errno);
 	else {
-		DEBUG("local_stdin_pipe[0]: %d\n", local_stdin_pipe[0]);
-		DEBUG("local_stdin_pipe[1]: %d\n", local_stdin_pipe[1]);
+		DEBUG_3("local_stdin_pipe[0]: %d\n", local_stdin_pipe[0]);
+		DEBUG_3("local_stdin_pipe[1]: %d\n", local_stdin_pipe[1]);
 	}
 	if (pipe(local_stdout_pipe))
 		fprintf(stderr, "pipe2(): %d", errno);
 	else {
-		DEBUG("local_stdout_pipe[0]: %d\n", local_stdout_pipe[0]);
-		DEBUG("local_stdout_pipe[1]: %d\n", local_stdout_pipe[1]);
+		DEBUG_3("local_stdout_pipe[0]: %d\n", local_stdout_pipe[0]);
+		DEBUG_3("local_stdout_pipe[1]: %d\n", local_stdout_pipe[1]);
 	}
 
 	if (tokenize_cmd(cmd, &tokenized_cmd, &tokenized_cmd_len))
@@ -266,7 +276,7 @@ void handle_start_cmd(char *tag, char *cmd) {
 			exit(1);
 		}
 	}
-	DEBUG("fork()ed: %d\n", pid);
+	DEBUG_2("fork()ed: %d\n", pid);
 	p->pid = pid;
 
 	p->input = local_stdin_pipe[1];
@@ -313,7 +323,7 @@ void handle_cmd_client(int client) {
 	message_tokens_t message_token = COMMAND;
 	char *parsed_message[3];
 	
-	printf("Client connected!\n");
+	DEBUG_2("Client connected!\n");
 	
 	if (read_message(client, &message) < 0) {
 		/* 
@@ -322,28 +332,28 @@ void handle_cmd_client(int client) {
 		fprintf(stderr, "Error reading message!\n");
 		goto out;
 	}
-	DEBUG("message: -%s-\n", message);
+	DEBUG_2("message: -%s-\n", message);
 
 	token = strtok_r(message, ":", &saveptr);
 	while (token) {
-		DEBUG("token: %s\n", token);
+		DEBUG_3("token: %s\n", token);
 		parsed_message[message_token] = token;
 		message_token++;
 		token = strtok_r(NULL, ":", &saveptr);
 	}
 
-	DEBUG("1. command: %s\n", parsed_message[COMMAND]);
-	DEBUG("2. tag    : %s\n", parsed_message[TAG]);
-	DEBUG("3. extra  : %s\n", parsed_message[EXTRA]);
+	DEBUG_2("1. command: %s\n", parsed_message[COMMAND]);
+	DEBUG_2("2. tag    : %s\n", parsed_message[TAG]);
+	DEBUG_2("3. extra  : %s\n", parsed_message[EXTRA]);
 
 	if (!strcmp(parsed_message[COMMAND], "START")) {
-		DEBUG("start\n");
+		DEBUG_3("start\n");
 		handle_start_cmd(parsed_message[TAG], parsed_message[EXTRA]);
 	} else if (!strcmp(parsed_message[COMMAND], "STOP")) {
-		DEBUG("stop\n");
+		DEBUG_3("stop\n");
 		handle_stop_cmd(parsed_message[TAG], parsed_message[EXTRA]);
 	} else if (!strcmp(parsed_message[COMMAND], "INPUT")) {
-		DEBUG("input\n");
+		DEBUG_3("input\n");
 		handle_input_cmd(parsed_message[TAG], parsed_message[EXTRA]);
 	} else {
 		fprintf(stderr,"Unknown COMMAND: %s\n",parsed_message[COMMAND]);
@@ -355,6 +365,12 @@ out:
 
 void handle_io_client(int client) {
 	FILE *global_output, *client_output;
+	sigset_t block_sig_set;
+
+	sigemptyset(&block_sig_set);
+	sigaddset(&block_sig_set, SIGPIPE);
+	pthread_sigmask(SIG_BLOCK, &block_sig_set, NULL);
+
 	pipe2(global_pipe, O_CLOEXEC);
 	FD_SET(global_pipe[0], &global_set);
 
@@ -369,7 +385,7 @@ void handle_io_client(int client) {
 	}
 
 	while (1) {
-		char buffer[80];
+		char buffer[LINE_BUFFER_SIZE+1] = {0,};
 		struct timeval timeout;
 
 		timeout.tv_sec = 5;
@@ -377,12 +393,33 @@ void handle_io_client(int client) {
 
 		select(FD_SETSIZE, &global_set, NULL, NULL, &timeout);
 
-		DEBUG("Done global select()ing\n");
+#if 0
+This is supposed to handle the case
+where an i/o client goes away. 
+Unfortunately we cannot detect that 
+case with any certainty.
+		if (FD_ISSET(client, &client_set)) {
+			DEBUG("client disconnected!\n");
+			close(global_pipe[0]);	
+			close(global_pipe[1]);
+			global_pipe[0] = GLOBAL_PIPE_UNINITIALIZED;
+			global_pipe[1] = GLOBAL_PIPE_UNINITIALIZED;
+			fclose(client_output);
+			break;
+		}
+#endif
+		DEBUG_3("Done global select()ing\n");
 		if (FD_ISSET(global_pipe[0], &global_set)) {
-			if (fgets(buffer, 80, global_output)) {
-				printf("OUTPUT: %s", buffer);
+			if (fgets(buffer, LINE_BUFFER_SIZE, global_output)) {
+				DEBUG_3("OUTPUT: %s", buffer);
 				fprintf(client_output, "%s", buffer);
-				fflush(client_output);
+				if (fflush(client_output)) {
+					fprintf(stderr, "Got error from fflush(client_output)!\n");
+					if (errno == EPIPE) {
+						fprintf(stderr, "fflush() failed with EPIPE!\n");
+					}
+					break;
+				}
 			} else {
 				fprintf(stderr, "Got EOF from fgets()\n");
 				break;
@@ -390,17 +427,22 @@ void handle_io_client(int client) {
 		}
 		FD_SET(global_pipe[0], &global_set);
 	}
+	DEBUG_3("Stopping handle_io_client.\n");
+	close(global_pipe[0]);	
+	close(global_pipe[1]);
+	global_pipe[0] = GLOBAL_PIPE_UNINITIALIZED;
+	global_pipe[1] = GLOBAL_PIPE_UNINITIALIZED;
 	fclose(client_output);
 	return;
 }
 
 void *dummy_handle_io_client(void *dummy) {
 	handle_io_client(0);
+	return NULL;
 }
 
 void *io_listener(void *unused) {
 	int server, client;
-	struct sockaddr_in child_sin;
 	struct sockaddr child_in;
 	socklen_t child_in_len = sizeof(struct sockaddr);
 
@@ -413,11 +455,11 @@ void *io_listener(void *unused) {
 			     (struct sockaddr*)&child_in, &child_in_len)) {
 		handle_io_client(client);
 	}
+	return NULL;
 }
 
 void *command_listener(void *unused) {
 	int server, client;
-	struct sockaddr_in child_sin;
 	struct sockaddr child_in;
 	socklen_t child_in_len = sizeof(struct sockaddr);
 
@@ -469,4 +511,6 @@ int main(int argc, char *argv[], char *envp[]) {
 #endif
 	pthread_join(io_server_thread, &retval);
 	pthread_join(cmd_server_thread, &retval);
+
+	return 0;
 }
