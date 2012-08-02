@@ -1,0 +1,18 @@
+<?xml version="1.0"?>
+<project name="Shell" basedir="." default="jar">
+	<property name="src" value="src" />
+	<property name="output" value="bin" />
+
+	<target name="compile">
+		<javac destdir="${output}">
+			<src path="${src}" />
+			<classpath path="${src}" />
+		</javac>
+	</target>
+
+	<target name="jar" depends="compile">
+		<jar destfile="Shell.jar">
+			<fileset dir="${output}" />
+		</jar>
+	</target>
+</project>
