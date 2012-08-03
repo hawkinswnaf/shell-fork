@@ -16,11 +16,25 @@
 		</jar>
 	</target>
 
-	<target name="test" depends="jar">
+	<target name="testShell" depends="jar">
 		<exec executable="java">
 			<arg value="-classpath"/>
 			<arg value="Shell.jar"/>
 			<arg value="net.commotionwireless.shell.Shell"/>
+		</exec>
+	</target>
+	<target name="testShellProcess" depends="jar">
+		<exec executable="java">
+			<arg value="-classpath"/>
+			<arg value="Shell.jar"/>
+			<arg value="net.commotionwireless.shell.ShellProcess"/>
+		</exec>
+	</target>
+	<target name="testTest" depends="jar">
+		<exec executable="java">
+			<arg value="-classpath"/>
+			<arg value="Shell.jar"/>
+			<arg value="net.commotionwireless.shell.ShellTest"/>
 		</exec>
 	</target>
 </project>
