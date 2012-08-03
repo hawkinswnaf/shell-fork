@@ -119,7 +119,7 @@ void *output_monitor(void *param) {
 			write(global_pipe[1], newline, strlen(newline));
 #endif
 
-			fprintf(global_output, "%s:%s", p->tag, buffer);
+			fprintf(global_output, "OUTPUT:%s:%s", p->tag, buffer);
 			fflush(global_output);
 #ifdef DEBUG_MODE
 			fprintf(stderr, "stderr: %s:%s\n", p->tag, buffer);
@@ -132,6 +132,9 @@ void *output_monitor(void *param) {
 		FD_SET(global_pipe[1], &except_set);
 	}
 	remove_process(p);
+	
+	fprintf(global_output, "STOPPED:%s:", p->tag);
+	fflush(global_output);
 	
 	close(p->input);
 	close(p->output);
