@@ -10,6 +10,7 @@ import java.io.OutputStreamWriter;
 import java.net.Socket;
 import java.net.InetAddress;
 import java.net.UnknownHostException;
+import java.util.Vector;
 
 public class Shell implements Runnable {
 	private static Shell mShell = null;
@@ -17,8 +18,11 @@ public class Shell implements Runnable {
 	private InputStream mErrorStream, mInputStream;
 	private OutputStream mOutputStream;
 	private ShellIo mShellIo;
+	private boolean mRunning;
+	private Vector<ShellProcess> mProcesses;
+	private Thread mShellThread;
 
-	public static Shell getInstance() {
+	synchronized public static Shell getInstance() {
 		if (mShell == null) {
 			mShell = new Shell();
 		}
@@ -26,36 +30,27 @@ public class Shell implements Runnable {
 	}
 	
 	private Shell() {
+		mProcesses = new Vector<ShellProcess>();
+		mRunning = false;
 	}
 
-
-	public static void main(String args[]) {
-		Thread shellThread = null;
-		Shell shell = Shell.getInstance();
-
-		System.out.println(shell);
-
-		shellThread = new Thread(shell);
-
-		shellThread.start();
-
-		try {
-			Thread.sleep(5000);
-			shell.sendCommand("START:G:ps -ef:");
-		} catch (IOException ioex) {
-			System.err.println("shell ioex: " + ioex);
-		} catch (InterruptedException interrupted) {
-			System.err.println("shell interrupted: " + interrupted)
-		}
-		try {
-			shellThread.join();
-		} catch (InterruptedException interruptedEx) {
-			System.err.println("interruptedEx: " + interruptedEx.toString());
-		}
+	public boolean isRunning() {
+		return mRunning;
 	}
 
-	public String toString() {
-		return "Shell toString()\n";
+	public boolean startProcess(ShellProcess process) {
+		mProcesses.addElement(process);
+		return true;
+	}
+
+	public boolean stopProcess(ShellProcess process) {
+		mProcesses.removeElement(process);
+		return true;
+	}
+
+	public void startShell() {
+		mShellThread = new Thread(this);
+		mShellThread.start();
 	}
 
 	class ShellTerminalMonitor implements Runnable {
@@ -78,6 +73,7 @@ public class Shell implements Runnable {
 				 */
 				System.err.println("e: " + e.toString());
 			}
+			System.err.println("ShellTerminalMonitor stopped.\n");
 		}
 	}
 
@@ -111,8 +107,8 @@ public class Shell implements Runnable {
 
 			try {
 				commandSocket = new Socket(mHost, mCommandPort);
-			} catch (SecurityException sex) {
-				throw new IOException(sex.toString());
+			} catch (SecurityException securityEx) {
+				throw new IOException(securityEx.toString());
 			}
 
 			socketOutputStream = commandSocket.getOutputStream();
@@ -148,17 +144,41 @@ public class Shell implements Runnable {
 			try {
 				String line;
 				do {
+					String lineParts[];
+					String type = null, tag = null, output = null;
 					line = socketInputStreamReader.readLine();
-					System.out.println("output line: " + line);
+
+					lineParts = line.split(":", 3);
+					if (lineParts.length > 0 && lineParts[0] != null) 
+						type = lineParts[0];
+					if (lineParts.length > 1 && lineParts[1] != null)
+						tag = lineParts[1];
+					if (lineParts.length > 2 && lineParts[2] != null)
+						output = lineParts[2];
+
+					if (type.equalsIgnoreCase("output") && tag != null) {
+						for (ShellProcess p : mProcesses) {
+							if (p.getTag().equals(tag)) {
+								p.sendOutput(output);
+								break;
+							}
+						}
+					}
 				} while (line != null);
 			} catch (Exception e) {
+				System.err.println("ShellIo.run(): " + e.toString());
 			}
+			System.err.println("ShellIo.run(): ending");
+			mRunning = false;
 		}
 	}
 
 	public void sendCommand(String command) throws IOException {
-		if (mShellIo != null) {
+		if (mShellIo != null && mRunning) {
 			mShellIo.sendCommand(command);
+		}
+		else {
+			System.out.println("mShellIo or mRunning are not appropriate (sendCommand()).");
 		}
 	}
 
@@ -170,38 +190,46 @@ public class Shell implements Runnable {
 		try {
 			mProcess = Runtime.getRuntime().exec("./fork");
 		} catch (IOException ioex) {
-			System.err.println("ioex: " + ioex.toString());
+			System.err.println("Shell.run: " + ioex.toString());
 			return;
 		}
 		if (mProcess == null) {
-			System.out.println("./fork failed!");
+			System.err.println("Shell.run: ./fork failed!");
 			return;
 		}
+
+		/*
+		 * Start ./fork terminal io monitoring.
+		 */
 		mInputStream = mProcess.getInputStream();
 		mOutputStream = mProcess.getOutputStream();
 		mErrorStream = mProcess.getErrorStream();
 
-		mOutputMonitorThread = new Thread(mOutputMonitor = new ShellTerminalMonitor(mInputStream));
-		mErrorMonitorThread = new Thread(mErrorMonitor = new ShellTerminalMonitor(mErrorStream));
+		(mOutputMonitorThread = new Thread(mOutputMonitor = new ShellTerminalMonitor(mInputStream))).start();
+		(mErrorMonitorThread = new Thread(mErrorMonitor = new ShellTerminalMonitor(mErrorStream))).start();
 
-		mOutputMonitorThread.start();
-		mErrorMonitorThread.start();
-
+		/*
+		 * Start a connection to ./fork
+		 * to actually gather subprocess
+		 * io.
+		 */
 		try {
 			mShellIo = new ShellIo();
-		} catch (UnknownHostException unknownHost) {
-			System.err.println("Unknown host error: " + unknownHost.toString());
+		} catch (UnknownHostException unknownHostEx) {
+			System.err.println("Shell.run: " + unknownHostEx.toString());
 			mProcess.destroy();
 			return;
 		}
 
-		mShellIoThread = new Thread(mShellIo);
-		mShellIoThread.start();
+		(mShellIoThread = new Thread(mShellIo)).start();
+
+		mRunning = true;
 	
 		try {
 			mProcess.waitFor();
 		} catch (InterruptedException interruptedEx) {
-			System.err.println("Interrupted: " + interruptedEx.toString());
-		}	
+			System.err.println("Shell.run: " + interruptedEx.toString());
+		}
+		mRunning = false;
 	}
 }
