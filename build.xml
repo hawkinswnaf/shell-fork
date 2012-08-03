@@ -15,4 +15,12 @@
 			<fileset dir="${output}" />
 		</jar>
 	</target>
+
+	<target name="test" depends="jar">
+		<exec executable="java">
+			<arg value="-classpath"/>
+			<arg value="Shell.jar"/>
+			<arg value="net.commotionwireless.shell.Shell"/>
+		</exec>
+	</target>
 </project>
