@@ -83,14 +83,15 @@ public class Shell implements Runnable {
 		public void run() {
 			try {
 				String line;
-				do {
-					line = mBr.readLine();
+				line = mBr.readLine();
+				while (line != null) {
 					System.out.println("Terminal: " + line);
-				} while (line != null);
-			} catch (Exception e) {
+					line = mBr.readLine();
+				}
+			} catch (IOException ioEx) {
 				/* error.
 				 */
-				System.err.println("e: " + e.toString());
+				System.err.println("ShellTerminalMonitor.run(): " + ioEx.toString());
 			}
 			System.err.println("ShellTerminalMonitor stopped.\n");
 		}
@@ -117,6 +118,10 @@ public class Shell implements Runnable {
 		public ShellIo(String host, int commandPort) 
 			throws UnknownHostException {
 			this(host, commandPort, commandPort);
+		}
+
+		public boolean isRunning() {
+			return mRunning;
 		}
 
 		public void sendCommand(String command) throws IOException {
@@ -209,18 +214,18 @@ public class Shell implements Runnable {
 	}
 
 	public void sendCommand(String command) throws IOException {
-		if (mShellIo != null && mRunning) {
+		if (mShellIo != null && mShellIo.isRunning() && mRunning) {
 			mShellIo.sendCommand(command);
 		}
 		else {
-			System.out.println("mShellIo or mRunning are not appropriate (sendCommand()).");
+			throw new IOException("mShellIo and/or Shell are/is not running (Shell.sendCommand()).");
 		}
 	}
 
 	public void run() {
-		ShellTerminalMonitor mOutputMonitor, mErrorMonitor;
-		Thread mOutputMonitorThread, mErrorMonitorThread;
-		Thread mShellIoThread;
+		ShellTerminalMonitor outputMonitor, errorMonitor;
+		Thread outputMonitorThread, errorMonitorThread;
+		Thread shellIoThread;
 
 		try {
 			mProcess = Runtime.getRuntime().exec("./fork");
@@ -240,8 +245,8 @@ public class Shell implements Runnable {
 		mOutputStream = mProcess.getOutputStream();
 		mErrorStream = mProcess.getErrorStream();
 
-		(mOutputMonitorThread = new Thread(mOutputMonitor = new ShellTerminalMonitor(mInputStream))).start();
-		(mErrorMonitorThread = new Thread(mErrorMonitor = new ShellTerminalMonitor(mErrorStream))).start();
+		(outputMonitorThread = new Thread(outputMonitor = new ShellTerminalMonitor(mInputStream))).start();
+		(errorMonitorThread = new Thread(errorMonitor = new ShellTerminalMonitor(mErrorStream))).start();
 
 		/*
 		 * Start a connection to ./fork
@@ -253,10 +258,11 @@ public class Shell implements Runnable {
 		} catch (UnknownHostException unknownHostEx) {
 			System.err.println("Shell.run: " + unknownHostEx.toString());
 			mProcess.destroy();
+			mProcess = null;
 			return;
 		}
 
-		(mShellIoThread = new Thread(mShellIo)).start();
+		(shellIoThread = new Thread(mShellIo)).start();
 
 		mRunning = true;
 	
@@ -266,5 +272,6 @@ public class Shell implements Runnable {
 			System.err.println("Shell.run: " + interruptedEx.toString());
 		}
 		mRunning = false;
+		mProcess = null;
 	}
 }
