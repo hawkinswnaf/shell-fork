@@ -34,7 +34,7 @@
 		</exec>
 	</target>
 	<target name="junit" depends="jar">
-		<junit>
+		<junit haltonerror="true">
 			<classpath>
 				<pathelement location="Shell.jar"/>
 				<pathelement location="/home/hawkinsw/code/junit/junit-4.10.jar"/>

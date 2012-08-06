@@ -21,6 +21,7 @@ public class Shell implements Runnable {
 	private boolean mRunning;
 	private Vector<ShellProcess> mProcesses;
 	private Thread mShellThread;
+	private ShellDebugMonitor mDebugMonitor;
 
 	synchronized public static Shell getInstance() {
 		if (mShell == null) {
@@ -31,7 +32,16 @@ public class Shell implements Runnable {
 	
 	private Shell() {
 		mProcesses = new Vector<ShellProcess>();
+		mDebugMonitor = null;
 		mRunning = false;
+	}
+
+	public void setDebugMonitor(ShellDebugMonitor debugMonitor) {
+		mDebugMonitor = debugMonitor;
+	}
+
+	public ShellDebugMonitor getDebugMonitor() {
+		return mDebugMonitor;
 	}
 
 	public boolean isRunning() {
@@ -179,6 +189,9 @@ public class Shell implements Runnable {
 						 */
 						continue;
 					}
+
+					if (mDebugMonitor != null)
+						mDebugMonitor.sendOutput(type, p, output);
 
 					if (type.equalsIgnoreCase("output")) {
 						p.sendOutput(output);
