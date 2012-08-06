@@ -20,20 +20,26 @@ public class ShellProcess {
 		System.out.println(this + ": " + output);
 	}
 
+	public void stopped() {
+		System.out.println(this + ": stopped.\n");
+	}
+
 	public String toString() {
 		return mTag;
 	}
 
 	public boolean start() {
 		boolean didStart = true;
-		try {
-			mShell.sendCommand("START:" + mTag + ":" + mCommand + ":");
-		} catch (IOException ioEx) {
+		if (mShell.startProcess(this)) {
+			try {
+				mShell.sendCommand("START:" + mTag + ":" + mCommand + ":");
+			} catch (IOException ioEx) {
+				didStart = false;
+			}
+		}
+		else 
 			didStart = false;
-		}
-		if (didStart) {
-			mShell.startProcess(this);
-		}
+
 		return didStart;
 	}
 

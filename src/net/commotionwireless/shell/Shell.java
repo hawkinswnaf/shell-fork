@@ -39,6 +39,9 @@ public class Shell implements Runnable {
 	}
 
 	public boolean startProcess(ShellProcess process) {
+		if (mProcesses.contains(process)) {
+			return false;
+		}
 		mProcesses.addElement(process);
 		return true;
 	}
@@ -48,9 +51,15 @@ public class Shell implements Runnable {
 		return true;
 	}
 
-	public void startShell() {
+	public boolean startShell() {
 		mShellThread = new Thread(this);
 		mShellThread.start();
+		return true;
+	}
+
+	public boolean stopShell() {
+		mProcess.destroy();
+		return true;
 	}
 
 	class ShellTerminalMonitor implements Runnable {
@@ -143,10 +152,11 @@ public class Shell implements Runnable {
 
 			try {
 				String line;
-				do {
+				line = socketInputStreamReader.readLine();
+				while (line != null) {
 					String lineParts[];
 					String type = null, tag = null, output = null;
-					line = socketInputStreamReader.readLine();
+					ShellProcess p = null;
 
 					lineParts = line.split(":", 3);
 					if (lineParts.length > 0 && lineParts[0] != null) 
@@ -156,17 +166,29 @@ public class Shell implements Runnable {
 					if (lineParts.length > 2 && lineParts[2] != null)
 						output = lineParts[2];
 
-					if (type.equalsIgnoreCase("output") && tag != null) {
-						for (ShellProcess p : mProcesses) {
-							if (p.getTag().equals(tag)) {
-								p.sendOutput(output);
-								break;
+					if (tag != null) {
+							for (ShellProcess ip : mProcesses) {
+								if (ip.getTag().equals(tag)) {
+									p = ip;	
+									break;
 							}
 						}
 					}
-				} while (line != null);
-			} catch (Exception e) {
-				System.err.println("ShellIo.run(): " + e.toString());
+					if (p == null) {
+						/* no matching process found! continue.
+						 */
+						continue;
+					}
+
+					if (type.equalsIgnoreCase("output")) {
+						p.sendOutput(output);
+					} else if (type.equalsIgnoreCase("stopped")) {
+						p.stopped();
+					}
+					line = socketInputStreamReader.readLine();
+				}
+			} catch (IOException ioEx) {
+				System.err.println("ShellIo.run(): " + ioEx.toString());
 			}
 			System.err.println("ShellIo.run(): ending");
 			mRunning = false;

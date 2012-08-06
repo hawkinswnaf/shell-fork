@@ -4,9 +4,12 @@
 	<property name="output" value="bin" />
 
 	<target name="compile">
-		<javac destdir="${output}">
+		<javac debug="true" destdir="${output}">
 			<src path="${src}" />
-			<classpath path="${src}" />
+			<classpath>
+				<pathelement path="${src}" />
+				<pathelement location="/home/hawkinsw/code/junit/junit-4.10.jar"/>
+			</classpath>
 		</javac>
 	</target>
 
@@ -30,11 +33,14 @@
 			<arg value="net.commotionwireless.shell.ShellProcess"/>
 		</exec>
 	</target>
-	<target name="testTest" depends="jar">
-		<exec executable="java">
-			<arg value="-classpath"/>
-			<arg value="Shell.jar"/>
-			<arg value="net.commotionwireless.shell.ShellTest"/>
-		</exec>
+	<target name="junit" depends="jar">
+		<junit>
+			<classpath>
+				<pathelement location="Shell.jar"/>
+				<pathelement location="/home/hawkinsw/code/junit/junit-4.10.jar"/>
+			</classpath>
+			<test name="net.commotionwireless.shell.ShellTest" />
+			<formatter type="plain" usefile="false"/>
+		</junit>
 	</target>
 </project>
