@@ -16,6 +16,7 @@
 int global_pipe[2] ;
 fd_set global_set;
 char **global_envp;
+pthread_mutex_t global_pipe_output_lock;
 
 #include "common.h"
 #include "process.h"
@@ -118,9 +119,10 @@ void *output_monitor(void *param) {
 			write(global_pipe[1], buffer, read_size);
 			write(global_pipe[1], newline, strlen(newline));
 #endif
-
+			pthread_mutex_lock(&global_pipe_output_lock);
 			fprintf(global_output, "OUTPUT:%s:%s", p->tag, buffer);
 			fflush(global_output);
+			pthread_mutex_unlock(&global_pipe_output_lock);
 #ifdef DEBUG_MODE
 			fprintf(stderr, "stderr: %s:%s\n", p->tag, buffer);
 			fflush(stderr);
@@ -133,7 +135,7 @@ void *output_monitor(void *param) {
 	}
 	remove_process(p);
 	
-	fprintf(global_output, "STOPPED:%s:", p->tag);
+	fprintf(global_output, "STOPPED:%s:\n", p->tag);
 	fflush(global_output);
 	
 	close(p->input);
@@ -458,7 +460,7 @@ void *io_listener(void *unused) {
 			     (struct sockaddr*)&child_in, &child_in_len)) {
 		handle_io_client(client);
 	}
-	return NULL;
+	return (void*)1;
 }
 
 void *command_listener(void *unused) {
@@ -483,6 +485,7 @@ void *command_listener(void *unused) {
 int main(int argc, char *argv[], char *envp[]) {
 	void *retval;
 	pthread_t cmd_server_thread, io_server_thread;
+	int pthread_error = 0;
 
 	global_pipe[0] = -1;
 	global_pipe[1] = -1;
@@ -492,27 +495,38 @@ int main(int argc, char *argv[], char *envp[]) {
 
 	init_process_list();
 
-	if (pthread_create(&cmd_server_thread, NULL, command_listener, NULL)) {
+	if (pthread_error = pthread_mutex_init(&global_pipe_output_lock, NULL)) {
+		/* error occurred initializing mutex.
+		 */
+		fprintf(stderr, "pthread_mutex_init() failed: %d\n", pthread_error);
+		return 1;
+	}
+
+	if (pthread_error = pthread_create(&cmd_server_thread, NULL, command_listener, NULL)) {
 		/* error
 		 */
-		fprintf(stderr,"pthread_create(cmd_server_thread) failed.\n");
+		fprintf(stderr,"pthread_create(cmd_server_thread) failed: %d.\n", pthread_error);
 		return 1;
 	}
 #ifdef GLOBAL_OUTPUT
-	if (pthread_create(&io_server_thread, NULL, io_listener, NULL)) {
+	if (pthread_error = pthread_create(&io_server_thread, NULL, io_listener, NULL)) {
 		/* error
 		 */
-		fprintf(stderr, "pthread_create(io_server_thread) failed.\n");
+		fprintf(stderr, "pthread_create(io_server_thread) failed: %d.\n", pthread_error);
 		return 1;
 	}
 #else
-	if (pthread_create(&io_server_thread, NULL, dummy_handle_io_client, NULL)) {
-		fprintf(stderr, "pthread_create(dummy_handle_io_client) failed.\n");
+	if (pthread_error = pthread_create(&io_server_thread, NULL, dummy_handle_io_client, NULL)) {
+		fprintf(stderr, "pthread_create(dummy_handle_io_client) failed: %d.\n", pthread_error);
 		return 1;
 	}
 
 #endif
 	pthread_join(io_server_thread, &retval);
+	if (retval == NULL) {
+		fprintf(stderr, "io_server_thread failed. Exiting.\n");
+		return 1;
+	}
 	pthread_join(cmd_server_thread, &retval);
 
 	return 0;
