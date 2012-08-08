@@ -28,7 +28,7 @@ typedef enum {
 	EXTRA = 2,
 } message_tokens_t;
 
-extern int errno;
+//extern int errno;
 
 int read_message(int client, char **message) {
 	int message_len = 0, message_idx = 0; 
@@ -307,7 +307,11 @@ int setup_server_socket(unsigned short port, unsigned long addr) {
 	sin.sin_port = htons(port);
 	sin.sin_addr.s_addr = htonl(addr);
 
-	if ((server = socket(AF_INET, SOCK_STREAM|SOCK_CLOEXEC, 0)) == -1) {
+	if ((server = socket(AF_INET, SOCK_STREAM, 0)) == -1) {
+		fprintf(stderr, "Error in socket()\n");
+		return -1;
+	}
+	if (fcntl(server, F_SETFD, O_CLOEXEC)) {
 		fprintf(stderr, "Error in socket()\n");
 		return -1;
 	}
