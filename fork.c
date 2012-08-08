@@ -311,7 +311,7 @@ int setup_server_socket(unsigned short port, unsigned long addr) {
 		fprintf(stderr, "Error in socket()\n");
 		return -1;
 	}
-	if (fcntl(server, F_SETFD, O_CLOEXEC)) {
+	if (fcntl(server, F_SETFD, FD_CLOEXEC)) {
 		fprintf(stderr, "Error in socket()\n");
 		return -1;
 	}
