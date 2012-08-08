@@ -4,6 +4,7 @@
 	<property name="output" value="bin" />
 
 	<target name="compile">
+		<mkdir dir="${output}" />
 		<javac debug="true" destdir="${output}">
 			<src path="${src}" />
 			<classpath>
