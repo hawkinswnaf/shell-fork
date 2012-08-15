@@ -22,6 +22,8 @@ public class Shell implements Runnable {
 	private Vector<ShellProcess> mProcesses;
 	private Thread mShellThread;
 	private ShellDebugMonitor mDebugMonitor;
+	private String mForkCmd;
+	private String[] mEnvp;
 
 	synchronized public static Shell getInstance() {
 		if (mShell == null) {
@@ -34,6 +36,8 @@ public class Shell implements Runnable {
 		mProcesses = new Vector<ShellProcess>();
 		mDebugMonitor = null;
 		mRunning = false;
+		mForkCmd = null;
+		mEnvp = null;
 	}
 
 	public void setDebugMonitor(ShellDebugMonitor debugMonitor) {
@@ -222,13 +226,25 @@ public class Shell implements Runnable {
 		}
 	}
 
+	public void setForkCommand(String forkCmd) {
+		mForkCmd = forkCmd;
+	}
+
+	public void setForkCommand(String forkCmd, String[] envp) {
+		setForkCommand(forkCmd);
+		mEnvp = envp;
+	}
+
 	public void run() {
 		ShellTerminalMonitor outputMonitor, errorMonitor;
 		Thread outputMonitorThread, errorMonitorThread;
 		Thread shellIoThread;
 
 		try {
-			mProcess = Runtime.getRuntime().exec("./fork");
+			if (mForkCmd == null)
+				mProcess = Runtime.getRuntime().exec("./fork", mEnvp);
+			else
+				mProcess = Runtime.getRuntime().exec(mForkCmd, mEnvp);
 		} catch (IOException ioex) {
 			System.err.println("Shell.run: " + ioex.toString());
 			return;
