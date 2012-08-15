@@ -306,8 +306,9 @@ int setup_server_socket(unsigned short port, unsigned long addr) {
 	memset(&sin, 0, sizeof(sin));
 	sin.sin_port = htons(port);
 	sin.sin_addr.s_addr = htonl(addr);
+	sin.sin_family = AF_INET;
 
-	if ((server = socket(AF_INET, SOCK_STREAM, 0)) == -1) {
+	if ((server = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP)) == -1) {
 		fprintf(stderr, "Error in socket()\n");
 		return -1;
 	}
