@@ -242,6 +242,7 @@ void handle_start_cmd(char *tag, char *cmd) {
 	}
 
 	p = (struct process*)malloc(sizeof(struct process));
+	memset(p, 0, sizeof(struct process));
 
 	p->tag = strdup(tag);
 
@@ -381,7 +382,8 @@ void handle_io_client(int client) {
 	sigaddset(&block_sig_set, SIGPIPE);
 	pthread_sigmask(SIG_BLOCK, &block_sig_set, NULL);
 
-	pipe2(global_pipe, O_CLOEXEC);
+//	pipe2(global_pipe, O_CLOEXEC);
+	pipe(global_pipe);
 	FD_SET(global_pipe[0], &global_set);
 
 	if (!(global_output = fdopen(global_pipe[0], "r"))) {
