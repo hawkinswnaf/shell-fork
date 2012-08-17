@@ -7,6 +7,7 @@ import static org.junit.Assert.*;
 public class ShellTest {
 	private static Shell shell = null;
 	ShellProcess grep = null;
+	ShellProcess sleep2 = null, sleep4 = null, sleep8 = null;
 
 	@BeforeClass public static void shellProcessTestSetup() {
 		shell = Shell.getInstance();
@@ -27,18 +28,57 @@ public class ShellTest {
 	}
 
 	@Before public void shellProcessTestBefore() {
+		sleep2 = new ShellProcess("S2", "sleep 2", shell);
+		sleep4 = new ShellProcess("S4", "sleep 4", shell);
+		sleep8 = new ShellProcess("S8", "sleep 8", shell);
 		grep = new ShellProcess("G", "grep --line-buffered asdfg", shell);
-		assertTrue(grep.start());
+		assertTrue(grep.runAsynchronous());
 	}
 
 	@After public void shellProcessTestAfter() {
 		assertTrue(grep.stop());
 	}
 
+	@Test public void shellProcessTestSleep2() {
+		long startTime, endTime, sleepTime;
+
+		startTime = System.nanoTime();
+		sleep2.runSynchronous();
+		endTime = System.nanoTime();
+
+		sleepTime = (endTime-startTime)/1000000000L;
+
+		System.out.println("sleep2 ran for " + sleepTime + " seconds");
+	}
+
+	@Test public void shellProcessTestSleep4() {
+		long startTime, endTime, sleepTime;
+
+		startTime = System.nanoTime();
+		sleep4.runSynchronous();
+		endTime = System.nanoTime();
+
+		sleepTime = (endTime-startTime)/1000000000L;
+
+		System.out.println("sleep4 ran for " + sleepTime + " seconds");
+	}
+
+	@Test public void shellProcessTestSleep8() {
+		long startTime, endTime, sleepTime;
+
+		startTime = System.nanoTime();
+		sleep8.runSynchronous();
+		endTime = System.nanoTime();
+
+		sleepTime = (endTime-startTime)/1000000000L;
+
+		System.out.println("sleep8 ran for " + sleepTime + " seconds");
+	}
+
 	@Test public void shellProcessTestSameTag() {
 		ShellProcess grep2 = null;
 		grep2 = new ShellProcess("G", "grep --line-buffered asdfg", shell);
-		assertFalse("grep2.start() did not fail.", grep2.start());
+		assertFalse("grep2.runAsynchronous() did not fail.", grep2.runAsynchronous());
 	}
 
 	class GrepShellDebugMonitor implements ShellDebugMonitor {

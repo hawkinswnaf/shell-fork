@@ -1,38 +1,75 @@
 package net.commotionwireless.shell;
 
 import java.io.IOException;
-
+/*
+import android.os.Handler;
+*/
 public class ShellProcess {
-	private String mTag, mCommand;
+	private String mStag, mCommand;
 	private Shell mShell;
+	private int mTag;
+//	private Handler mHandler;
+	private Object mHandler;
+	private boolean mShouldStop;
 
-	public ShellProcess(String tag, String command, Shell shell) {
-		mTag = tag;
+	public ShellProcess(String sTag, String command, Shell shell) {
+		mStag = sTag;
 		mCommand = command;
 		mShell = shell;
+		mTag = -1;
+		mShouldStop = false;
+	}
+
+//	public void setHandler(Handler handler, int tag) {
+	public void setHandler(Object handler, int tag) {
+		mTag = tag;
+		mHandler = handler;
 	}
 
 	public void sendInput(String input) throws IOException {
-		mShell.sendCommand("INPUT:" + mTag + ":" + input + ":");
+		mShell.sendCommand("INPUT:" + mStag + ":" + input + ":");
 	}
 
 	public void sendOutput(String output) {
 		System.out.println(this + ": " + output);
+		//if (mHandler != null) 
+			//mHandler.obtainMessage(mTag, output).sendToTarget();
 	}
 
-	public void stopped() {
+	synchronized public void stopped() {
 		System.out.println(this + ": stopped.\n");
+		mShouldStop = true;
 	}
 
 	public String toString() {
-		return mTag;
+		return mStag;
 	}
 
-	public boolean start() {
+	public boolean runSynchronous() {
+		start();
+		while (true) {
+			synchronized (this) { if (mShouldStop) break; }
+			try {
+				Thread.sleep(1000);
+			} catch (InterruptedException interruptedEx) {
+				/*
+				 * meh.
+				 */
+			}
+		}
+		mShouldStop = false;
+		return true;
+	}
+
+	public boolean runAsynchronous() {
+		return start();
+	}
+
+	private boolean start() {
 		boolean didStart = true;
 		if (mShell.startProcess(this)) {
 			try {
-				mShell.sendCommand("START:" + mTag + ":" + mCommand + ":");
+				mShell.sendCommand("START:" + mStag + ":" + mCommand + ":");
 			} catch (IOException ioEx) {
 				didStart = false;
 			}
@@ -46,7 +83,7 @@ public class ShellProcess {
 	public boolean stop() {
 		boolean didStop = true;
 		try {
-			mShell.sendCommand("STOP:" + mTag + ":" + mCommand + ":");
+			mShell.sendCommand("STOP:" + mStag + ":" + mCommand + ":");
 		} catch (IOException ioEx) {
 			didStop = false;
 		}
@@ -57,20 +94,20 @@ public class ShellProcess {
 	}
 
 	public String getTag() {
-		return mTag;
+		return mStag;
 	}
 
 	public boolean equals(Object obj) {
 		if (obj instanceof ShellProcess) {
 			ShellProcess otherProcess = (ShellProcess)obj;
-			return (otherProcess.getTag().equals(mTag));
+			return (otherProcess.getTag().equals(mStag));
 		}
 		return false;
 	}
 
 	public int hashCode() {
 		int hash = 0;
-		for (byte c : mTag.getBytes()) {
+		for (byte c : mStag.getBytes()) {
 			hash += (int)c;
 		}
 		return hash;
