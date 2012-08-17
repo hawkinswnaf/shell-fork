@@ -2,6 +2,9 @@
 <project name="Shell" basedir="." default="jar">
 	<property name="src" value="src" />
 	<property name="output" value="bin" />
+	<property name="jarFile" value="Shell.jar"/>
+	<property name="junitJarFile" value="/home/hawkinsw/code/junit/junit-4.10.jar"/>
+	<property name="androidJarFile" value="/home/hawkinsw/android-sdk-linux/platforms/android-16/android.jar"/>
 
 	<target name="compile">
 		<mkdir dir="${output}" />
@@ -9,13 +12,14 @@
 			<src path="${src}" />
 			<classpath>
 				<pathelement path="${src}" />
-				<pathelement location="/home/hawkinsw/code/junit/junit-4.10.jar"/>
+				<pathelement location="${junitJarFile}" />
+				<pathelement location="${androidJarFile}" />
 			</classpath>
 		</javac>
 	</target>
 
 	<target name="jar" depends="compile">
-		<jar destfile="Shell.jar">
+		<jar destfile="${jarFile}">
 			<fileset dir="${output}" />
 		</jar>
 	</target>
@@ -23,25 +27,25 @@
 	<target name="testShell" depends="jar">
 		<exec executable="java">
 			<arg value="-classpath"/>
-			<arg value="Shell.jar"/>
+			<arg value="${jarFile}"/>
 			<arg value="net.commotionwireless.shell.Shell"/>
 		</exec>
 	</target>
 	<target name="testShellProcess" depends="jar">
 		<exec executable="java">
 			<arg value="-classpath"/>
-			<arg value="Shell.jar"/>
+			<arg value="${jarFile}"/>
 			<arg value="net.commotionwireless.shell.ShellProcess"/>
 		</exec>
 	</target>
 	<target name="junit" depends="jar">
 		<junit haltonerror="true">
 			<classpath>
-				<pathelement location="Shell.jar"/>
-				<pathelement location="/home/hawkinsw/code/junit/junit-4.10.jar"/>
+				<pathelement location="${jarFile}"/>
+				<pathelement location="${junitJarFile}"/>
 			</classpath>
 			<test name="net.commotionwireless.shell.ShellTest" />
-			<formatter type="plain" usefile="false"/>
+			<formatter type="plain" usefile="true"/>
 		</junit>
 	</target>
 </project>
