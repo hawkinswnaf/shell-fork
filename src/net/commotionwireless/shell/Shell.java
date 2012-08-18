@@ -72,7 +72,8 @@ public class Shell implements Runnable {
 	}
 
 	public boolean stopShell() {
-		mProcess.destroy();
+		if (mProcess != null)
+			mProcess.destroy();
 		return true;
 	}
 
@@ -158,6 +159,7 @@ public class Shell implements Runnable {
 			try {
 				outputSocket = new Socket(mHost, mOutputPort);
 			} catch (Exception exc) {
+				System.err.println("ShellIo.run:" + exc.toString());
 				return;
 			}
 
@@ -166,6 +168,7 @@ public class Shell implements Runnable {
 				socketInputStreamReader = new BufferedReader(new InputStreamReader(socketInputStream));
 				mRunning = true;
 			} catch (IOException ioex) {
+				System.err.println("ShellIo.run:" + ioex.toString());
 				return;
 			}
 
@@ -254,6 +257,16 @@ public class Shell implements Runnable {
 			return;
 		}
 
+		System.err.println("Shell.run: started");
+
+		try {
+			Thread.sleep(1000);
+		} catch (InterruptedException interruptedEx) {
+			/* 
+			 * meh.
+			 */
+		}
+
 		/*
 		 * Start ./fork terminal io monitoring.
 		 */
@@ -289,5 +302,6 @@ public class Shell implements Runnable {
 		}
 		mRunning = false;
 		mProcess = null;
+		System.err.println("Shell.run: Shell stopping.");
 	}
 }
