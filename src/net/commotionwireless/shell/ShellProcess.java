@@ -1,15 +1,14 @@
 package net.commotionwireless.shell;
 
 import java.io.IOException;
-/*
 import android.os.Handler;
-*/
+
 public class ShellProcess {
 	private String mStag, mCommand;
 	private Shell mShell;
 	private int mTag;
-//	private Handler mHandler;
-	private Object mHandler;
+	private Handler mHandler;
+//	private Object mHandler;
 	private boolean mShouldStop;
 
 	public ShellProcess(String sTag, String command, Shell shell) {
@@ -20,8 +19,8 @@ public class ShellProcess {
 		mShouldStop = false;
 	}
 
-//	public void setHandler(Handler handler, int tag) {
-	public void setHandler(Object handler, int tag) {
+	public void setHandler(Handler handler, int tag) {
+//	public void setHandler(Object handler, int tag) {
 		mTag = tag;
 		mHandler = handler;
 	}
@@ -32,8 +31,8 @@ public class ShellProcess {
 
 	public void sendOutput(String output) {
 		System.out.println(this + ": " + output);
-		//if (mHandler != null) 
-			//mHandler.obtainMessage(mTag, output).sendToTarget();
+		if (mHandler != null) 
+			mHandler.obtainMessage(mTag, output).sendToTarget();
 	}
 
 	synchronized public void stopped() {
@@ -46,7 +45,10 @@ public class ShellProcess {
 	}
 
 	public boolean runSynchronous() {
-		start();
+		if (!start()) {
+			System.out.println("ShellProcess.runSynchronous: Error starting");
+			return false;
+		}
 		while (true) {
 			synchronized (this) { if (mShouldStop) break; }
 			try {
