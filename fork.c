@@ -17,22 +17,25 @@ int global_pipe[2] ;
 fd_set global_set;
 char **global_envp;
 pthread_mutex_t global_pipe_output_lock;
+char *global_connection_key;
 
 #include "common.h"
 #include "process.h"
+#include "encode.h"
 
 
 typedef enum {
-	COMMAND = 0,
-	TAG = 1,
-	EXTRA = 2,
+	KEY = 0,
+	COMMAND = 1,
+	TAG = 2,
+	EXTRA = 3,
 } message_tokens_t;
 
 //extern int errno;
 
 int read_message(int client, char **message) {
 	int message_len = 0, message_idx = 0; 
-	int expected_colons = 3, colon_count = 1;
+	int expected_colons = 4, colon_count = 1;
 
 	message_len = 1;
 	message_idx = 0;
@@ -331,8 +334,8 @@ int setup_server_socket(unsigned short port, unsigned long addr) {
 
 void handle_cmd_client(int client) {
 	char *message = NULL, *token = NULL, *saveptr = NULL;
-	message_tokens_t message_token = COMMAND;
-	char *parsed_message[3];
+	message_tokens_t message_token = KEY;
+	char *parsed_message[4];
 	
 	DEBUG_2("Client connected!\n");
 	
@@ -353,9 +356,19 @@ void handle_cmd_client(int client) {
 		token = strtok_r(NULL, ":", &saveptr);
 	}
 
-	DEBUG_2("1. command: %s\n", parsed_message[COMMAND]);
-	DEBUG_2("2. tag    : %s\n", parsed_message[TAG]);
-	DEBUG_2("3. extra  : %s\n", parsed_message[EXTRA]);
+	DEBUG_2("1. key    : %s\n", parsed_message[KEY]);
+	DEBUG_2("2. command: %s\n", parsed_message[COMMAND]);
+	DEBUG_2("3. tag    : %s\n", parsed_message[TAG]);
+	DEBUG_2("4. extra  : %s\n", parsed_message[EXTRA]);
+
+	if (!(strlen(parsed_message[KEY]) == 8 &&
+	check_connection_key(parsed_message[KEY], global_connection_key))) {
+		/*
+		 * key does not match!
+		 */
+		fprintf(stderr, "KEY does not match.\n");
+		goto out;
+	}
 
 	if (!strcmp(parsed_message[COMMAND], "START")) {
 		DEBUG_3("start\n");
@@ -489,6 +502,7 @@ void *command_listener(void *unused) {
 	return NULL;
 }
 
+
 int main(int argc, char *argv[], char *envp[]) {
 	void *retval;
 	pthread_t cmd_server_thread, io_server_thread;
@@ -499,6 +513,16 @@ int main(int argc, char *argv[], char *envp[]) {
 	FD_ZERO(&global_set);
 
 	global_envp = envp;
+
+	global_connection_key = generate_connection_key();
+	printf("KEY: %c%c%c%c%c%c%c%c\n", global_connection_key[0], 
+		global_connection_key[1],
+		global_connection_key[2],
+		global_connection_key[3],
+		global_connection_key[4],
+		global_connection_key[5],
+		global_connection_key[6],
+		global_connection_key[7]);
 
 	init_process_list();
 
