@@ -8,19 +8,25 @@ public class ShellTest {
 	private static Shell shell = null;
 	ShellProcess grep = null;
 	ShellProcess sleep2 = null, sleep4 = null, sleep8 = null;
+	ShellProcess sleep2a = null;
 
 	@BeforeClass public static void shellProcessTestSetup() {
 		shell = Shell.getInstance();
 		shell.startShell();
 
-		try {
-			Thread.sleep(5000);
-		} catch (InterruptedException interruptedEx) {
-			/*
-			 */
+		System.err.println("Waiting for shell to start.");
+		while (true) {
+			try {
+				synchronized (shell) {
+					if (shell.isRunning() != Shell.ShellRunningStatus.NOTRUNNING) break;
+					shell.wait();
+				}
+			} catch (InterruptedException interruptedEx) {
+			}
 		}
+		System.err.println("Shell started.");
 
-		assertTrue(shell.isRunning());
+		assertTrue(shell.isRunning() == Shell.ShellRunningStatus.RUNNING);
 	}
 	
 	@AfterClass public static void shellProcessTestStop() {
@@ -31,12 +37,33 @@ public class ShellTest {
 		sleep2 = new ShellProcess("S2", "sleep 2", shell);
 		sleep4 = new ShellProcess("S4", "sleep 4", shell);
 		sleep8 = new ShellProcess("S8", "sleep 8", shell);
+		sleep2a = new ShellProcess("S2", "sleep 2", shell);
 		grep = new ShellProcess("G", "grep --line-buffered asdfg", shell);
 		assertTrue(grep.runAsynchronous());
 	}
 
 	@After public void shellProcessTestAfter() {
 		assertTrue(grep.stop());
+	}
+
+	@Test public void shellProcessTestSleep2a() {
+		long startTime, endTime, sleepTime;
+
+		startTime = System.nanoTime();
+		sleep2.runSynchronous();
+		endTime = System.nanoTime();
+
+		sleepTime = (endTime-startTime)/1000000000L;
+
+		System.out.println("sleep2 ran for " + sleepTime + " seconds");
+		
+		startTime = System.nanoTime();
+		sleep2a.runSynchronous();
+		endTime = System.nanoTime();
+
+		sleepTime = (endTime-startTime)/1000000000L;
+
+		System.out.println("sleep2a ran for " + sleepTime + " seconds");
 	}
 
 	@Test public void shellProcessTestSleep2() {
@@ -141,7 +168,8 @@ public class ShellTest {
 		ShellTest test = new ShellTest();
 		shellProcessTestSetup();
 		test.shellProcessTestBefore();
-		test.shellProcessTestSameTag();
+//		test.shellProcessTestSameTag();
+		test.shellProcessTestSleep2a();
 		test.shellProcessTestAfter();
 		shellProcessTestStop();
 	}

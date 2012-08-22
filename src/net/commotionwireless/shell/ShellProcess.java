@@ -3,14 +3,26 @@ package net.commotionwireless.shell;
 import java.io.IOException;
 import android.os.Handler;
 
+/**
+ * ShellProcess represents a process
+ * running in a fork shell (which 
+ * itself is represented as a {@link Shell}.)
+ */
 public class ShellProcess {
 	private String mStag, mCommand;
 	private Shell mShell;
 	private int mTag;
-	private Handler mHandler;
-//	private Object mHandler;
+//	private Handler mHandler;
+	private Object mHandler;
 	private boolean mShouldStop;
 
+	/**
+	 * Create a new fork Shell process.
+	 *
+	 * @param sTag The tag for the process.
+	 * @param command The command to start the process.
+	 * @param shell The Shell under which this process will run.
+	 */
 	public ShellProcess(String sTag, String command, Shell shell) {
 		mStag = sTag;
 		mCommand = command;
@@ -19,31 +31,52 @@ public class ShellProcess {
 		mShouldStop = false;
 	}
 
-	public void setHandler(Handler handler, int tag) {
-//	public void setHandler(Object handler, int tag) {
+	/**
+	 * Set an Android Handler to take receipt 
+	 * of output from this process.
+	 *
+	 * @param handler An Android Handler to notify about output.
+	 * @param tag A tag used by the handler to identify this process.
+	 */
+//	public void setHandler(Handler handler, int tag) {
+	public void setHandler(Object handler, int tag) {
 		mTag = tag;
 		mHandler = handler;
 	}
 
+	/**
+	 * Give input to this process.
+	 *
+	 * @param input Input to this process.
+	 * @throws IOException Throws an exception if
+	 * the input cannot be given to the process.
+	 */
 	public void sendInput(String input) throws IOException {
 		mShell.sendCommand("INPUT:" + mStag + ":" + input + ":");
 	}
 
-	public void sendOutput(String output) {
+	final protected void sendOutput(String output) {
 		System.out.println(this + ": " + output);
-		if (mHandler != null) 
-			mHandler.obtainMessage(mTag, output).sendToTarget();
+//		if (mHandler != null) 
+//			mHandler.obtainMessage(mTag, output).sendToTarget();
 	}
 
-	synchronized public void stopped() {
+	synchronized protected void stopped() {
 		System.out.println(this + ": stopped.\n");
 		mShouldStop = true;
+		this.notifyAll();
 	}
 
 	public String toString() {
 		return mStag;
 	}
 
+	/**
+	 * Run the process to completion.
+	 *
+	 * @return Whether the process ran successfully. This is NOT
+	 * the return value of the underlying process.
+	 */
 	public boolean runSynchronous() {
 		if (!start()) {
 			System.out.println("ShellProcess.runSynchronous: Error starting");
@@ -52,7 +85,9 @@ public class ShellProcess {
 		while (true) {
 			synchronized (this) { if (mShouldStop) break; }
 			try {
-				Thread.sleep(1000);
+				synchronized (this) {
+					this.wait(1000);
+				}	
 			} catch (InterruptedException interruptedEx) {
 				/*
 				 * meh.
@@ -60,9 +95,15 @@ public class ShellProcess {
 			}
 		}
 		mShouldStop = false;
+		mShell.stopProcess(this);
 		return true;
 	}
 
+	/**
+	 * Run the process asynchronously.
+	 *
+	 * @return Whether the process started successfully. 
+	 */
 	public boolean runAsynchronous() {
 		return start();
 	}
@@ -73,6 +114,7 @@ public class ShellProcess {
 			try {
 				mShell.sendCommand("START:" + mStag + ":" + mCommand + ":");
 			} catch (IOException ioEx) {
+				System.err.println("Error: " + ioEx.toString());
 				didStart = false;
 			}
 		}
@@ -82,6 +124,11 @@ public class ShellProcess {
 		return didStart;
 	}
 
+	/**
+	 * Stop a running process.
+	 *
+	 * @return Whether the process was stopped.
+	 */
 	public boolean stop() {
 		boolean didStop = true;
 		try {
@@ -95,6 +142,11 @@ public class ShellProcess {
 		return didStop;
 	}
 
+	/**
+	 * Get the String tag of this process.
+	 *
+	 * @return The String tag of this process.
+	 */
 	public String getTag() {
 		return mStag;
 	}
