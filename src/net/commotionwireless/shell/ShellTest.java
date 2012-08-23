@@ -14,17 +14,7 @@ public class ShellTest {
 		shell = Shell.getInstance();
 		shell.startShell();
 
-		System.err.println("Waiting for shell to start.");
-		while (true) {
-			try {
-				synchronized (shell) {
-					if (shell.isRunning() != Shell.ShellRunningStatus.NOTRUNNING) break;
-					shell.wait();
-				}
-			} catch (InterruptedException interruptedEx) {
-			}
-		}
-		System.err.println("Shell started.");
+		Shell.waitForShellToStart(shell);
 
 		assertTrue(shell.isRunning() == Shell.ShellRunningStatus.RUNNING);
 	}
@@ -168,7 +158,7 @@ public class ShellTest {
 		ShellTest test = new ShellTest();
 		shellProcessTestSetup();
 		test.shellProcessTestBefore();
-//		test.shellProcessTestSameTag();
+		test.shellProcessTestSameTag();
 		test.shellProcessTestSleep2a();
 		test.shellProcessTestAfter();
 		shellProcessTestStop();
