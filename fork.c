@@ -13,8 +13,18 @@
 #include <errno.h>
 #include <fcntl.h>
 
+/*---------------------------------------------
+ * Global variables.
+ *
+ * global_pipe: Pipe for communication between 
+ * child processes and the parent I/O wrangler.
+ * global_envp: Holds a reference to the envp of
+ * this process.
+ * global_pipe_output_lock: UNUSED.
+ * global_connection_key: The connection key used
+ * to authenticate all client connections.
+ *--------------------------------------------*/
 int global_pipe[2] ;
-fd_set global_set;
 char **global_envp;
 pthread_mutex_t global_pipe_output_lock;
 char *global_connection_key;
@@ -23,7 +33,6 @@ char *global_connection_key;
 #include "process.h"
 #include "encode.h"
 
-
 typedef enum {
 	KEY = 0,
 	COMMAND = 1,
@@ -31,8 +40,8 @@ typedef enum {
 	EXTRA = 3,
 } message_tokens_t;
 
-//extern int errno;
-
+/*---------------------------------------------
+ *--------------------------------------------*/
 int read_message(int client, char **message) {
 	int message_len = 0, message_idx = 0; 
 	int expected_colons = 4, colon_count = 1;
@@ -68,6 +77,8 @@ int read_message(int client, char **message) {
 	return 0;
 }
 
+/*---------------------------------------------
+ *--------------------------------------------*/
 void *output_monitor(void *param) {
 	struct process *p = (struct process *)param;
 	FILE *output = NULL, *global_output;
@@ -154,6 +165,8 @@ void *output_monitor(void *param) {
 	return NULL;
 }
 
+/*---------------------------------------------
+ *--------------------------------------------*/
 void *threaded_wait_pid(void *arg) {
 	struct process *p = (struct process *)arg;
 	int status = 0;
@@ -165,6 +178,8 @@ void *threaded_wait_pid(void *arg) {
 	return NULL;
 }
 
+/*---------------------------------------------
+ *--------------------------------------------*/
 void debug_tokenize_cmd(char **argv, int argc) {
 	int i = 0;
 	fprintf(stderr, "argc: %d\n", argc);
@@ -172,6 +187,8 @@ void debug_tokenize_cmd(char **argv, int argc) {
 		fprintf(stderr, "argv[%d]: -%s-\n", i, (argv[i]) ? argv[i] : "!");
 }
 
+/*---------------------------------------------
+ *--------------------------------------------*/
 int tokenize_cmd(char *cmd, char ***argv, int *argc) {
 	char *saveptr = NULL;
 
@@ -191,17 +208,22 @@ int tokenize_cmd(char *cmd, char ***argv, int *argc) {
 	return 0;
 }
 
+/*---------------------------------------------
+ *--------------------------------------------*/
 void handle_stop_cmd(char *tag, char *extra) {
 	struct process *p = NULL;
 
 	if (p = find_process_by_tag(tag)) {
 		DEBUG_3("Found process to kill\n");
-		if (kill(p->pid, SIGINT)) {
+//		if (kill(p->pid, SIGINT)) {
+		if (kill(p->pid, SIGKILL)) {
 			fprintf(stderr, "kill() failed: %d\n", errno);
 		}
 	}
 }
 
+/*---------------------------------------------
+ *--------------------------------------------*/
 void handle_input_cmd(char *tag, char *extra) {
 	struct process *p = NULL;
 	char *newline = "\n";
@@ -231,6 +253,8 @@ void handle_input_cmd(char *tag, char *extra) {
 	return;
 }
 
+/*---------------------------------------------
+ *--------------------------------------------*/
 void handle_start_cmd(char *tag, char *cmd) {
 	struct process *p;
 	int pid = 0;
@@ -303,6 +327,8 @@ void handle_start_cmd(char *tag, char *cmd) {
 	pthread_create(&(p->wait_thread), NULL, threaded_wait_pid, p);
 }
 
+/*---------------------------------------------
+ *--------------------------------------------*/
 int setup_server_socket(unsigned short port, unsigned long addr) {
 	int server;
 	struct sockaddr_in sin;
@@ -332,6 +358,8 @@ int setup_server_socket(unsigned short port, unsigned long addr) {
 	return server;
 }
 
+/*---------------------------------------------
+ *--------------------------------------------*/
 void handle_cmd_client(int client) {
 	char *message = NULL, *token = NULL, *saveptr = NULL;
 	message_tokens_t message_token = KEY;
@@ -383,13 +411,20 @@ void handle_cmd_client(int client) {
 		fprintf(stderr,"Unknown COMMAND: %s\n",parsed_message[COMMAND]);
 	}
 out:
+
+	print_processes();	
+
 	shutdown(client, SHUT_RDWR);
 	close(client);
 }
 
+/*---------------------------------------------
+ *--------------------------------------------*/
 void handle_io_client(int client) {
 	FILE *global_output, *client_output;
 	sigset_t block_sig_set;
+	fd_set global_pipe_set;
+	
 
 	sigemptyset(&block_sig_set);
 	sigaddset(&block_sig_set, SIGPIPE);
@@ -397,7 +432,8 @@ void handle_io_client(int client) {
 
 //	pipe2(global_pipe, O_CLOEXEC);
 	pipe(global_pipe);
-	FD_SET(global_pipe[0], &global_set);
+	FD_ZERO(&global_pipe_set);
+	FD_SET(global_pipe[0], &global_pipe_set);
 
 	if (!(global_output = fdopen(global_pipe[0], "r"))) {
 		fprintf(stderr, "OOPS: Cannot open global output!\n");
@@ -416,7 +452,7 @@ void handle_io_client(int client) {
 		timeout.tv_sec = 5;
 		timeout.tv_usec = 0;
 
-		select(FD_SETSIZE, &global_set, NULL, NULL, &timeout);
+		select(FD_SETSIZE, &global_pipe_set, NULL, NULL, &timeout);
 
 #if 0
 This is supposed to handle the case
@@ -434,7 +470,7 @@ case with any certainty.
 		}
 #endif
 		DEBUG_3("Done global select()ing\n");
-		if (FD_ISSET(global_pipe[0], &global_set)) {
+		if (FD_ISSET(global_pipe[0], &global_pipe_set)) {
 			if (fgets(buffer, LINE_BUFFER_SIZE, global_output)) {
 				DEBUG_3("OUTPUT: %s", buffer);
 				fprintf(client_output, "%s", buffer);
@@ -450,7 +486,7 @@ case with any certainty.
 				break;
 			}
 		}
-		FD_SET(global_pipe[0], &global_set);
+		FD_SET(global_pipe[0], &global_pipe_set);
 	}
 	DEBUG_3("Stopping handle_io_client.\n");
 	close(global_pipe[0]);	
@@ -461,11 +497,15 @@ case with any certainty.
 	return;
 }
 
+/*---------------------------------------------
+ *--------------------------------------------*/
 void *dummy_handle_io_client(void *dummy) {
 	handle_io_client(0);
 	return NULL;
 }
 
+/*---------------------------------------------
+ *--------------------------------------------*/
 void *io_listener(void *unused) {
 	int server, client;
 	struct sockaddr child_in;
@@ -483,6 +523,8 @@ void *io_listener(void *unused) {
 	return (void*)1;
 }
 
+/*---------------------------------------------
+ *--------------------------------------------*/
 void *command_listener(void *unused) {
 	int server, client;
 	struct sockaddr child_in;
@@ -510,19 +552,8 @@ int main(int argc, char *argv[], char *envp[]) {
 
 	global_pipe[0] = -1;
 	global_pipe[1] = -1;
-	FD_ZERO(&global_set);
 
 	global_envp = envp;
-
-	global_connection_key = generate_connection_key();
-	printf("KEY: %c%c%c%c%c%c%c%c\n", global_connection_key[0], 
-		global_connection_key[1],
-		global_connection_key[2],
-		global_connection_key[3],
-		global_connection_key[4],
-		global_connection_key[5],
-		global_connection_key[6],
-		global_connection_key[7]);
 
 	init_process_list();
 
@@ -553,6 +584,18 @@ int main(int argc, char *argv[], char *envp[]) {
 	}
 
 #endif
+
+	global_connection_key = generate_connection_key();
+	printf("KEY:%c%c%c%c%c%c%c%c\n", global_connection_key[0], 
+		global_connection_key[1],
+		global_connection_key[2],
+		global_connection_key[3],
+		global_connection_key[4],
+		global_connection_key[5],
+		global_connection_key[6],
+		global_connection_key[7]);
+	fflush(stdout);
+	
 	pthread_join(io_server_thread, &retval);
 	if (retval == NULL) {
 		fprintf(stderr, "io_server_thread failed. Exiting.\n");
