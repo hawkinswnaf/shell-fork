@@ -610,7 +610,6 @@ int main(int argc, char *argv[], char *envp[]) {
 		global_connection_key[7]);
 	fflush(stdout);
 	
-	pthread_join(global_io_server_thread, &retval);
 	pthread_join(global_cmd_server_thread, &retval);
 
 	DEBUG_3("Shutting down properly.\n");
