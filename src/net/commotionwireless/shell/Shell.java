@@ -73,6 +73,20 @@ public class Shell implements Runnable {
 		}
 		return mShell;
 	}
+
+	public static void waitForShellToStart(Shell shell) {
+		System.err.println("Waiting for shell to start.");
+		while (true) {
+			try {
+				synchronized (shell) {
+					if (shell.isRunning() != Shell.ShellRunningStatus.NOTRUNNING) break;
+					shell.wait();
+				}
+			} catch (InterruptedException interruptedEx) {
+			}
+		}
+		System.err.println("Shell started.");
+	}
 	
 	private Shell() {
 		mProcesses = new Vector<ShellProcess>();
@@ -239,16 +253,35 @@ public class Shell implements Runnable {
 		}
 
 		public void run() {
+			int connectionTries = 0;
+			int maxConnectionTries = 2;
 			Socket outputSocket = null;
 			InputStream socketInputStream = null;
 			BufferedReader socketInputStreamReader = null;
 
 			mRunning = Shell.ShellRunningStatus.ERROR;
 
-			try {
-				outputSocket = new Socket(mHost, mOutputPort);
-			} catch (Exception exc) {
-				System.err.println("ShellIo.run:" + exc.toString());
+		
+			while (connectionTries < maxConnectionTries) {
+				try {
+					outputSocket = new Socket(mHost, mOutputPort);
+					break;
+				} catch (Exception exc) {
+					System.err.println("ShellIo.run:" + exc.toString());
+				}
+				connectionTries++;
+				System.out.println("ShellIo will try again.");
+				try {
+					Thread.sleep(500);
+				} catch (InterruptedException interruptedEx) {
+					/* 
+					 * who cares!
+					 */
+				}
+			}
+
+			if (outputSocket == null) {
+				System.out.println("ShellIo officially failed.");
 				synchronized (mShellIoSignal) {
 					mShellIoSignal.notifyAll();
 				}
