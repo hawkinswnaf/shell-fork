@@ -138,7 +138,10 @@ public class Shell implements Runnable {
 	}
 
 	final protected boolean stopProcess(ShellProcess process) {
-		mProcesses.removeElement(process);
+		synchronized (this) {
+			mProcesses.removeElement(process);
+			this.notifyAll(); 
+		}
 		return true;
 	}
 
@@ -159,8 +162,25 @@ public class Shell implements Runnable {
 	 * @return Whether the Shell stopped or not.
 	 */
 	public boolean stopShell() {
-		if (mProcess != null)
-			mProcess.destroy();
+		System.out.println("Waiting for all processes to stop.");
+		synchronized (this) {
+			while (!mProcesses.isEmpty()) {
+				try {
+					this.wait();
+				} catch (InterruptedException interruptedEx) {
+					/* 
+					 * who cares.
+					 */
+				}
+			}
+		}
+		System.out.println("Sending KILL command.");
+		try {
+			sendCommand("KILL:::");
+		} catch (IOException ioEx) {
+			System.err.println("Could not send KILL command.");
+			return false;
+		}
 		return true;
 	}
 
