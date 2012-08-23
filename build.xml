@@ -18,6 +18,11 @@
 		</javac>
 	</target>
 
+	<target name="clean">
+		<delete dir="${output}"/>
+		<delete file="$jarFile"/>
+	</target>
+
 	<target name="jar" depends="compile">
 		<jar destfile="${jarFile}">
 			<fileset dir="${output}" />
