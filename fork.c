@@ -28,6 +28,8 @@ int global_pipe[2] ;
 char **global_envp;
 pthread_mutex_t global_pipe_output_lock;
 char *global_connection_key;
+int global_io_server_handle, global_cmd_server_handle;
+pthread_t global_io_server_thread, global_cmd_server_thread;
 
 #include "common.h"
 #include "process.h"
@@ -207,6 +209,18 @@ int tokenize_cmd(char *cmd, char ***argv, int *argc) {
 
 	return 0;
 }
+/*---------------------------------------------
+ *--------------------------------------------*/
+void handle_kill_cmd(char *tag, char *extra) {
+	/*
+	 * shut it down!
+	 */
+	shutdown(global_cmd_server_handle, SHUT_RDWR);
+	close(global_cmd_server_handle);
+	
+	shutdown(global_io_server_handle, SHUT_RDWR);
+	close(global_io_server_handle);
+}
 
 /*---------------------------------------------
  *--------------------------------------------*/
@@ -363,7 +377,7 @@ int setup_server_socket(unsigned short port, unsigned long addr) {
 void handle_cmd_client(int client) {
 	char *message = NULL, *token = NULL, *saveptr = NULL;
 	message_tokens_t message_token = KEY;
-	char *parsed_message[4];
+	char *parsed_message[4] = {NULL,};
 	
 	DEBUG_2("Client connected!\n");
 	
@@ -384,10 +398,10 @@ void handle_cmd_client(int client) {
 		token = strtok_r(NULL, ":", &saveptr);
 	}
 
-	DEBUG_2("1. key    : %s\n", parsed_message[KEY]);
-	DEBUG_2("2. command: %s\n", parsed_message[COMMAND]);
-	DEBUG_2("3. tag    : %s\n", parsed_message[TAG]);
-	DEBUG_2("4. extra  : %s\n", parsed_message[EXTRA]);
+	DEBUG_2("1. key    : %s\n", parsed_message[KEY] ? parsed_message[KEY] : "NULL");
+	DEBUG_2("2. command: %s\n", parsed_message[COMMAND] ? parsed_message[COMMAND] : "NULL");
+	DEBUG_2("3. tag    : %s\n", parsed_message[TAG] ? parsed_message[TAG] : "NULL");
+	DEBUG_2("4. extra  : %s\n", parsed_message[EXTRA] ? parsed_message[EXTRA] : "NULL");
 
 	if (!(strlen(parsed_message[KEY]) == 8 &&
 	check_connection_key(parsed_message[KEY], global_connection_key))) {
@@ -407,12 +421,13 @@ void handle_cmd_client(int client) {
 	} else if (!strcmp(parsed_message[COMMAND], "INPUT")) {
 		DEBUG_3("input\n");
 		handle_input_cmd(parsed_message[TAG], parsed_message[EXTRA]);
+	} else if (!strcmp(parsed_message[COMMAND], "KILL")) {
+		DEBUG_3("kill\n");
+		handle_kill_cmd(parsed_message[TAG], parsed_message[EXTRA]);
 	} else {
 		fprintf(stderr,"Unknown COMMAND: %s\n",parsed_message[COMMAND]);
 	}
 out:
-
-	print_processes();	
 
 	shutdown(client, SHUT_RDWR);
 	close(client);
@@ -507,17 +522,17 @@ void *dummy_handle_io_client(void *dummy) {
 /*---------------------------------------------
  *--------------------------------------------*/
 void *io_listener(void *unused) {
-	int server, client;
+	int client;
 	struct sockaddr child_in;
 	socklen_t child_in_len = sizeof(struct sockaddr);
 
-	if ((server = setup_server_socket(5001, INADDR_ANY)) < 1) {
+	if ((global_io_server_handle = setup_server_socket(5001, INADDR_ANY)) < 1) {
 		fprintf(stderr, "Error from setup_server_socket()\n");
 		return NULL;
 	}
 
-	while (client = accept(server, 
-			     (struct sockaddr*)&child_in, &child_in_len)) {
+	while ((client = accept(global_io_server_handle, 
+			     (struct sockaddr*)&child_in, &child_in_len)) >= 0) {
 		handle_io_client(client);
 	}
 	return (void*)1;
@@ -526,32 +541,31 @@ void *io_listener(void *unused) {
 /*---------------------------------------------
  *--------------------------------------------*/
 void *command_listener(void *unused) {
-	int server, client;
+	int client;
 	struct sockaddr child_in;
 	socklen_t child_in_len = sizeof(struct sockaddr);
 
-	if ((server = setup_server_socket(5000, INADDR_ANY)) < 1) {
+	if ((global_cmd_server_handle = setup_server_socket(5000, INADDR_ANY)) < 1) {
 		fprintf(stderr, "Error from setup_server_socket()\n");
 		return NULL;
 	}
 
-	while ((client = accept(server, 
+	while ((client = accept(global_cmd_server_handle, 
 			(struct sockaddr*)&child_in, &child_in_len)) >= 0) {
 		handle_cmd_client(client);
 	}
-
-	fprintf(stderr, "command_listener: %d, %s\n", client, strerror(errno));
 	return NULL;
 }
 
 
 int main(int argc, char *argv[], char *envp[]) {
 	void *retval;
-	pthread_t cmd_server_thread, io_server_thread;
 	int pthread_error = 0;
 
 	global_pipe[0] = -1;
 	global_pipe[1] = -1;
+
+	global_cmd_server_handle = global_io_server_handle = -1;
 
 	global_envp = envp;
 
@@ -564,21 +578,21 @@ int main(int argc, char *argv[], char *envp[]) {
 		return 1;
 	}
 
-	if (pthread_error = pthread_create(&cmd_server_thread, NULL, command_listener, NULL)) {
+	if (pthread_error = pthread_create(&global_cmd_server_thread, NULL, command_listener, NULL)) {
 		/* error
 		 */
 		fprintf(stderr,"pthread_create(cmd_server_thread) failed: %d.\n", pthread_error);
 		return 1;
 	}
 #ifdef GLOBAL_OUTPUT
-	if (pthread_error = pthread_create(&io_server_thread, NULL, io_listener, NULL)) {
+	if (pthread_error = pthread_create(&global_io_server_thread, NULL, io_listener, NULL)) {
 		/* error
 		 */
 		fprintf(stderr, "pthread_create(io_server_thread) failed: %d.\n", pthread_error);
 		return 1;
 	}
 #else
-	if (pthread_error = pthread_create(&io_server_thread, NULL, dummy_handle_io_client, NULL)) {
+	if (pthread_error = pthread_create(&global_io_server_thread, NULL, dummy_handle_io_client, NULL)) {
 		fprintf(stderr, "pthread_create(dummy_handle_io_client) failed: %d.\n", pthread_error);
 		return 1;
 	}
@@ -596,12 +610,12 @@ int main(int argc, char *argv[], char *envp[]) {
 		global_connection_key[7]);
 	fflush(stdout);
 	
-	pthread_join(io_server_thread, &retval);
-	if (retval == NULL) {
-		fprintf(stderr, "io_server_thread failed. Exiting.\n");
-		return 1;
-	}
-	pthread_join(cmd_server_thread, &retval);
+	pthread_join(global_io_server_thread, &retval);
+	pthread_join(global_cmd_server_thread, &retval);
+
+	DEBUG_3("Shutting down properly.\n");
+	
+	DEBUG_3("Done shutting down properly.\n");
 
 	return 0;
 }
