@@ -3,9 +3,14 @@
 	<property name="src" value="src" />
 	<property name="output" value="bin" />
 	<property name="jarFile" value="Shell.jar"/>
+	<!--
+		junitJarFile: Location of junit.jar on your system.
+		androidJarFilePath: Location of the Android sdk platform
+		on your system. (Default given by external/Makefile in 
+		MeshTether code.)
+	-->
 	<property name="junitJarFile" value="/home/hawkinsw/code/junit/junit-4.10.jar"/>
-	<property name="androidJarFile" value="/home/hawkinsw/android-sdk-linux/platforms/android-16/android.jar"/>
-
+	<property name="androidJarFilePath" value="/home/hawkinsw/android-sdk-linux/platforms/android-16/"/>
 	<target name="compile">
 		<mkdir dir="${output}" />
 		<javac debug="true" destdir="${output}">
@@ -13,7 +18,7 @@
 			<classpath>
 				<pathelement path="${src}" />
 				<pathelement location="${junitJarFile}" />
-				<pathelement location="${androidJarFile}" />
+				<pathelement location="${androidJarFilePath}/android.jar" />
 			</classpath>
 		</javac>
 	</target>
