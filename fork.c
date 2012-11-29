@@ -20,15 +20,16 @@
  * child processes and the parent I/O wrangler.
  * global_envp: Holds a reference to the envp of
  * this process.
- * global_pipe_output_lock: UNUSED.
+ * global_pipe_output_lock: Locks the output side
+ * of the global pipe. This ensures that two 
+ * output monitors do not write over each other.
  * global_connection_key: The connection key used
  * to authenticate all client connections.
  *--------------------------------------------*/
 int global_pipe[2] ;
 char **global_envp;
-pthread_mutex_t global_pipe_output_lock;
+pthread_mutex_t global_pipe_output_lock, global_output_lock;
 char *global_connection_key;
-int global_io_server_handle, global_cmd_server_handle;
 pthread_t global_io_server_thread, global_cmd_server_thread;
 
 #include "common.h"
@@ -46,7 +47,7 @@ typedef enum {
  *--------------------------------------------*/
 int read_message(int client, char **message) {
 	int message_len = 0, message_idx = 0; 
-	int expected_colons = 4, colon_count = 1;
+	int colon_count = 0;
 
 	message_len = 1;
 	message_idx = 0;
@@ -64,19 +65,17 @@ int read_message(int client, char **message) {
 		*message=(char*)realloc(*message,sizeof(char)*(message_len+1));
 		memset(*message + message_len, 0, sizeof(char));
 
-		if (*(*message + message_idx) == ':') {
-			if (colon_count == expected_colons)
-				break;
-			else 
-				colon_count++;
-		}
+		if (*(*message + message_idx) == '\n')
+			break;
+		if (*(*message + message_idx) == ':')
+			colon_count++;
 
 		message_len+=1;
 		message_idx+=1;
 
 		DEBUG_3("message: %s\n", *message);
 	} while (1);
-	return 0;
+	return colon_count;
 }
 
 /*---------------------------------------------
@@ -95,12 +94,12 @@ void *output_monitor(void *param) {
 	FD_SET(global_pipe[1], &except_set);
 
 	if (!(output = fdopen(p->output, "r"))) {
-		fprintf(stderr, "Cannot do fdopen() for output!\n");
+		eprintf("Cannot do fdopen() for output!\n");
 		return NULL;
 	}
 
 	if (!(global_output = fdopen(global_pipe[1], "w"))) {
-		fprintf(stderr, "Cannot do fdopen() for global_output\n"); 
+		eprintf("Cannot do fdopen() for global_output\n"); 
 		return NULL;
 	}
 	DEBUG_2("Starting output monitor for %s.\n", p->tag);
@@ -120,7 +119,7 @@ void *output_monitor(void *param) {
 		if (FD_ISSET(p->output, &except_set) ||
 		    FD_ISSET(global_pipe[0], &except_set) ||
 		    FD_ISSET(global_pipe[1], &except_set)) {
-			fprintf(stderr, "Exception occurred!\n");
+			eprintf("Exception occurred!\n");
 			break;
 		}
 
@@ -129,7 +128,8 @@ void *output_monitor(void *param) {
 			if (fgets(buffer, LINE_BUFFER_SIZE, output) == NULL)
 				break;
 
-			DEBUG_3("buffer: %s-\n", buffer);
+			DEBUG_3("buffer: %s", buffer);
+			DEBUG_3("-end of buffer\n");
 #if 0
 			write(global_pipe[1], p->tag, strlen(p->tag));
 			write(global_pipe[1], buffer, read_size);
@@ -140,7 +140,7 @@ void *output_monitor(void *param) {
 			fflush(global_output);
 			pthread_mutex_unlock(&global_pipe_output_lock);
 #ifdef DEBUG_MODE
-			fprintf(stderr, "stderr: %s:%s\n", p->tag, buffer);
+			eprintf("stderr: %s:%s\n", p->tag, buffer);
 			fflush(stderr);
 #endif
 		}
@@ -184,9 +184,9 @@ void *threaded_wait_pid(void *arg) {
  *--------------------------------------------*/
 void debug_tokenize_cmd(char **argv, int argc) {
 	int i = 0;
-	fprintf(stderr, "argc: %d\n", argc);
+	dprintf("argc: %d\n", argc);
 	for (i = 0; i<argc; i++)
-		fprintf(stderr, "argv[%d]: -%s-\n", i, (argv[i]) ? argv[i] : "!");
+		dprintf("argv[%d]: -%s-\n", i, (argv[i]) ? argv[i] : "!");
 }
 
 /*---------------------------------------------
@@ -215,11 +215,6 @@ void handle_kill_cmd(char *tag, char *extra) {
 	/*
 	 * shut it down!
 	 */
-	shutdown(global_cmd_server_handle, SHUT_RDWR);
-	close(global_cmd_server_handle);
-	
-	shutdown(global_io_server_handle, SHUT_RDWR);
-	close(global_io_server_handle);
 }
 
 /*---------------------------------------------
@@ -231,7 +226,7 @@ void handle_stop_cmd(char *tag, char *extra) {
 		DEBUG_3("Found process to kill\n");
 //		if (kill(p->pid, SIGINT)) {
 		if (kill(p->pid, SIGKILL)) {
-			fprintf(stderr, "kill() failed: %d\n", errno);
+			eprintf("kill() failed: %d\n", errno);
 		}
 	}
 }
@@ -255,14 +250,14 @@ void handle_input_cmd(char *tag, char *extra) {
 		FILE *in = NULL;
 
 		if (!(in = fdopen(p->input, "w"))) {
-			fprintf(stderr, "Could not send input to process (%s).\n", tag);
+			eprintf("Could not send input to process (%s).\n", tag);
 			return;
 		}
 		fprintf(in, "%s\n", extra);
 		fflush(in);
 		//fclose(in);
 	} else {
-		fprintf(stderr, "Could not find process (%s) for input.\n",tag);
+		eprintf("Could not find process (%s) for input.\n",tag);
 	}
 	return;
 }
@@ -278,7 +273,7 @@ void handle_start_cmd(char *tag, char *cmd) {
 
 	if (global_pipe[0] == GLOBAL_PIPE_UNINITIALIZED || 
 	    global_pipe[1] == GLOBAL_PIPE_UNINITIALIZED) {
-		fprintf(stderr, "Cannot do commands without a listener.\n");
+		eprintf("Cannot do commands without a listener.\n");
 		return;
 	}
 
@@ -287,21 +282,21 @@ void handle_start_cmd(char *tag, char *cmd) {
 
 	p->tag = strdup(tag);
 
-	if (pipe(local_stdin_pipe)) 
-		fprintf(stderr, "pipe2(): %d", errno);
+	if (pipe(local_stdin_pipe))
+		eprintf("pipe2(): %d", errno);
 	else {
 		DEBUG_3("local_stdin_pipe[0]: %d\n", local_stdin_pipe[0]);
 		DEBUG_3("local_stdin_pipe[1]: %d\n", local_stdin_pipe[1]);
 	}
 	if (pipe(local_stdout_pipe))
-		fprintf(stderr, "pipe2(): %d", errno);
+		eprintf("pipe2(): %d", errno);
 	else {
 		DEBUG_3("local_stdout_pipe[0]: %d\n", local_stdout_pipe[0]);
 		DEBUG_3("local_stdout_pipe[1]: %d\n", local_stdout_pipe[1]);
 	}
 
 	if (tokenize_cmd(cmd, &tokenized_cmd, &tokenized_cmd_len))
-		fprintf(stderr, "Error tokenizing the cmd!\n");
+		eprintf("Error tokenizing the cmd!\n");
 
 	debug_tokenize_cmd(tokenized_cmd, tokenized_cmd_len);
 
@@ -318,7 +313,7 @@ void handle_start_cmd(char *tag, char *cmd) {
 		close(local_stdout_pipe[1]);
 
 		if (execvp(tokenized_cmd[0], tokenized_cmd)<0) {
-			fprintf(stderr, "execvp() failed!\n");
+			eprintf("execvp() failed!\n");
 			fflush(stderr);
 			exit(1);
 		}
@@ -353,20 +348,20 @@ int setup_server_socket(unsigned short port, unsigned long addr) {
 	sin.sin_family = AF_INET;
 
 	if ((server = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP)) == -1) {
-		fprintf(stderr, "Error in socket()\n");
+		eprintf("Error in socket()\n");
 		return -1;
 	}
 	if (fcntl(server, F_SETFD, FD_CLOEXEC)) {
-		fprintf(stderr, "Error in socket()\n");
+		eprintf("Error in socket()\n");
 		return -1;
 	}
 	if (bind(server, (struct sockaddr*)&sin, sizeof(sin)) == -1) {
-		fprintf(stderr, "Error in bind(): %d\n", errno);
+		eprintf("Error in bind(): %d\n", errno);
 		return -1;
 	}
 	
 	if (listen(server, -1) == -1) {
-		fprintf(stderr, "Error in listen()\n");
+		eprintf("Error in listen()\n");
 		return -1;
 	}
 	return server;
@@ -378,17 +373,25 @@ void handle_cmd_client(int client) {
 	char *message = NULL, *token = NULL, *saveptr = NULL;
 	message_tokens_t message_token = KEY;
 	char *parsed_message[4] = {NULL,};
+	int colons = 0, expected_colons = 4;
 	
 	DEBUG_2("Client connected!\n");
 	
-	if (read_message(client, &message) < 0) {
+	if ((colons = read_message(client, &message)) < 0) {
 		/* 
 		 * error occurred reading message.
 		 */
-		fprintf(stderr, "Error reading message!\n");
-		goto out;
+		eprintf("Error reading message!\n");
+		return;
 	}
 	DEBUG_2("message: -%s-\n", message);
+	if (colons != expected_colons) {
+		eprintf("Message error: Not enough colons (%d)\n", colons);
+		/* TODO
+		 * free(message);
+		 */
+		return;
+	}
 
 	token = strtok_r(message, ":", &saveptr);
 	while (token) {
@@ -408,8 +411,11 @@ void handle_cmd_client(int client) {
 		/*
 		 * key does not match!
 		 */
-		fprintf(stderr, "KEY does not match.\n");
-		goto out;
+		eprintf("KEY does not match.\n");
+		/* TODO
+		 * free(message);
+		 */
+		return;
 	}
 
 	if (!strcmp(parsed_message[COMMAND], "START")) {
@@ -425,17 +431,18 @@ void handle_cmd_client(int client) {
 		DEBUG_3("kill\n");
 		handle_kill_cmd(parsed_message[TAG], parsed_message[EXTRA]);
 	} else {
-		fprintf(stderr,"Unknown COMMAND: %s\n",parsed_message[COMMAND]);
+		eprintf("Unknown COMMAND: %s\n",parsed_message[COMMAND]);
 	}
-out:
-
-	shutdown(client, SHUT_RDWR);
-	close(client);
+//	shutdown(client, SHUT_RDWR);
+//	close(client);
+	/* TODO
+	 * free(message);
+	 */
 }
 
 /*---------------------------------------------
  *--------------------------------------------*/
-void handle_io_client(int client) {
+void *handle_io_client(void *unused) {
 	FILE *global_output, *client_output;
 	sigset_t block_sig_set;
 	fd_set global_pipe_set;
@@ -451,14 +458,10 @@ void handle_io_client(int client) {
 	FD_SET(global_pipe[0], &global_pipe_set);
 
 	if (!(global_output = fdopen(global_pipe[0], "r"))) {
-		fprintf(stderr, "OOPS: Cannot open global output!\n");
+		eprintf("OOPS: Cannot open global output!\n");
 		return;
 	}
-
-	if (!(client_output = fdopen(client, "w"))) {
-		fprintf(stderr, "OOPS: Cannot open client output!\n");
-		return;
-	}
+	client_output = stdout;
 
 	while (1) {
 		char buffer[LINE_BUFFER_SIZE+1] = {0,};
@@ -487,17 +490,21 @@ case with any certainty.
 		DEBUG_3("Done global select()ing\n");
 		if (FD_ISSET(global_pipe[0], &global_pipe_set)) {
 			if (fgets(buffer, LINE_BUFFER_SIZE, global_output)) {
-				DEBUG_3("OUTPUT: %s", buffer);
+				DEBUG_3("DEBUG: %s", buffer);
+
+				pthread_mutex_lock(&global_output_lock);
 				fprintf(client_output, "%s", buffer);
+				pthread_mutex_unlock(&global_output_lock);
+
 				if (fflush(client_output)) {
-					fprintf(stderr, "Got error from fflush(client_output)!\n");
+					eprintf("Got error from fflush(client_output)!\n");
 					if (errno == EPIPE) {
-						fprintf(stderr, "fflush() failed with EPIPE!\n");
+						eprintf("fflush() failed with EPIPE!\n");
 					}
 					break;
 				}
 			} else {
-				fprintf(stderr, "Got EOF from fgets()\n");
+				eprintf("Got EOF from fgets()\n");
 				break;
 			}
 		}
@@ -515,45 +522,17 @@ case with any certainty.
 /*---------------------------------------------
  *--------------------------------------------*/
 void *dummy_handle_io_client(void *dummy) {
-	handle_io_client(0);
+	handle_io_client(NULL);
 	return NULL;
 }
 
 /*---------------------------------------------
  *--------------------------------------------*/
-void *io_listener(void *unused) {
-	int client;
-	struct sockaddr child_in;
-	socklen_t child_in_len = sizeof(struct sockaddr);
-
-	if ((global_io_server_handle = setup_server_socket(5001, INADDR_ANY)) < 1) {
-		fprintf(stderr, "Error from setup_server_socket()\n");
-		return NULL;
-	}
-
-	while ((client = accept(global_io_server_handle, 
-			     (struct sockaddr*)&child_in, &child_in_len)) >= 0) {
-		handle_io_client(client);
-	}
-	return (void*)1;
-}
-
-/*---------------------------------------------
- *--------------------------------------------*/
 void *command_listener(void *unused) {
-	int client;
-	struct sockaddr child_in;
-	socklen_t child_in_len = sizeof(struct sockaddr);
+	int client = 0;
 
-	if ((global_cmd_server_handle = setup_server_socket(5000, INADDR_ANY)) < 1) {
-		fprintf(stderr, "Error from setup_server_socket()\n");
-		return NULL;
-	}
-
-	while ((client = accept(global_cmd_server_handle, 
-			(struct sockaddr*)&child_in, &child_in_len)) >= 0) {
+	while (1)
 		handle_cmd_client(client);
-	}
 	return NULL;
 }
 
@@ -565,8 +544,6 @@ int main(int argc, char *argv[], char *envp[]) {
 	global_pipe[0] = -1;
 	global_pipe[1] = -1;
 
-	global_cmd_server_handle = global_io_server_handle = -1;
-
 	global_envp = envp;
 
 	init_process_list();
@@ -574,7 +551,14 @@ int main(int argc, char *argv[], char *envp[]) {
 	if (pthread_error = pthread_mutex_init(&global_pipe_output_lock, NULL)) {
 		/* error occurred initializing mutex.
 		 */
-		fprintf(stderr, "pthread_mutex_init() failed: %d\n", pthread_error);
+		fprintf(stderr, "pthread_mutex_init(&global_pipe_output_lock) failed: %d\n", pthread_error);
+		return 1;
+	}
+
+	if (pthread_error = pthread_mutex_init(&global_output_lock, NULL)) {
+		/* error occurred initializing mutex.
+		 */
+		fprintf(stderr, "pthread_mutex_init(&global_output_lock) failed: %d\n", pthread_error);
 		return 1;
 	}
 
@@ -585,7 +569,7 @@ int main(int argc, char *argv[], char *envp[]) {
 		return 1;
 	}
 #ifdef GLOBAL_OUTPUT
-	if (pthread_error = pthread_create(&global_io_server_thread, NULL, io_listener, NULL)) {
+	if (pthread_error = pthread_create(&global_io_server_thread, NULL, handle_io_client, NULL)) {
 		/* error
 		 */
 		fprintf(stderr, "pthread_create(io_server_thread) failed: %d.\n", pthread_error);
