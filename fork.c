@@ -369,7 +369,7 @@ int setup_server_socket(unsigned short port, unsigned long addr) {
 
 /*---------------------------------------------
  *--------------------------------------------*/
-void handle_cmd_client(int client) {
+int handle_cmd_client(int client) {
 	char *message = NULL, *token = NULL, *saveptr = NULL;
 	message_tokens_t message_token = KEY;
 	char *parsed_message[4] = {NULL,};
@@ -382,7 +382,7 @@ void handle_cmd_client(int client) {
 		 * error occurred reading message.
 		 */
 		eprintf("Error reading message!\n");
-		return;
+		return 1;
 	}
 	DEBUG_2("message: -%s-\n", message);
 	if (colons != expected_colons) {
@@ -390,7 +390,7 @@ void handle_cmd_client(int client) {
 		/* TODO
 		 * free(message);
 		 */
-		return;
+		return 1;
 	}
 
 	token = strtok_r(message, ":", &saveptr);
@@ -415,7 +415,7 @@ void handle_cmd_client(int client) {
 		/* TODO
 		 * free(message);
 		 */
-		return;
+//		return;
 	}
 
 	if (!strcmp(parsed_message[COMMAND], "START")) {
@@ -430,9 +430,11 @@ void handle_cmd_client(int client) {
 	} else if (!strcmp(parsed_message[COMMAND], "KILL")) {
 		DEBUG_3("kill\n");
 		handle_kill_cmd(parsed_message[TAG], parsed_message[EXTRA]);
+		return 0;
 	} else {
 		eprintf("Unknown COMMAND: %s\n",parsed_message[COMMAND]);
 	}
+	return 1;
 //	shutdown(client, SHUT_RDWR);
 //	close(client);
 	/* TODO
@@ -494,6 +496,7 @@ case with any certainty.
 
 				pthread_mutex_lock(&global_output_lock);
 				fprintf(client_output, "%s", buffer);
+				fflush(client_output);
 				pthread_mutex_unlock(&global_output_lock);
 
 				if (fflush(client_output)) {
@@ -532,7 +535,8 @@ void *command_listener(void *unused) {
 	int client = 0;
 
 	while (1)
-		handle_cmd_client(client);
+		if (!handle_cmd_client(client))
+			break;
 	return NULL;
 }
 
