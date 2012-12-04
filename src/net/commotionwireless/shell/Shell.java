@@ -209,7 +209,7 @@ public class Shell implements Runnable {
 		public void sendCommand(String command) throws IOException {
 			String actualCommand;
 
-			actualCommand = "KEY" + ":" + command + "\n";
+			actualCommand = command + "\n";
 
 			mInputToForkWriter.write(actualCommand, 0, actualCommand.length());
 			mInputToForkWriter.flush();
@@ -246,6 +246,14 @@ public class Shell implements Runnable {
 						tag = lineParts[1];
 					if (lineParts.length > 2 && lineParts[2] != null)
 						output = lineParts[2];
+
+					/*
+					 * Skip over anything that starts with ERROR: or 
+					 * DEBUG:.
+					 */
+					if (type.equalsIgnoreCase("error") ||
+							type.equalsIgnoreCase("debug"))
+						continue;
 	
 					if (tag != null) {
 							for (ShellProcess ip : mProcesses) {
