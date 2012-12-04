@@ -34,13 +34,11 @@ pthread_t global_io_server_thread, global_cmd_server_thread;
 
 #include "common.h"
 #include "process.h"
-#include "encode.h"
 
 typedef enum {
-	KEY = 0,
-	COMMAND = 1,
-	TAG = 2,
-	EXTRA = 3,
+	COMMAND = 0,
+	TAG = 1,
+	EXTRA = 2,
 } message_tokens_t;
 
 /*---------------------------------------------
@@ -371,9 +369,9 @@ int setup_server_socket(unsigned short port, unsigned long addr) {
  *--------------------------------------------*/
 int handle_cmd_client(int client) {
 	char *message = NULL, *token = NULL, *saveptr = NULL;
-	message_tokens_t message_token = KEY;
-	char *parsed_message[4] = {NULL,};
-	int colons = 0, expected_colons = 4;
+	message_tokens_t message_token = COMMAND;
+	char *parsed_message[3] = {NULL,};
+	int colons = 0, expected_colons = 3;
 	
 	DEBUG_2("Client connected!\n");
 	
@@ -401,22 +399,9 @@ int handle_cmd_client(int client) {
 		token = strtok_r(NULL, ":", &saveptr);
 	}
 
-	DEBUG_2("1. key    : %s\n", parsed_message[KEY] ? parsed_message[KEY] : "NULL");
-	DEBUG_2("2. command: %s\n", parsed_message[COMMAND] ? parsed_message[COMMAND] : "NULL");
-	DEBUG_2("3. tag    : %s\n", parsed_message[TAG] ? parsed_message[TAG] : "NULL");
-	DEBUG_2("4. extra  : %s\n", parsed_message[EXTRA] ? parsed_message[EXTRA] : "NULL");
-
-	if (!(strlen(parsed_message[KEY]) == 8 &&
-	check_connection_key(parsed_message[KEY], global_connection_key))) {
-		/*
-		 * key does not match!
-		 */
-		eprintf("KEY does not match.\n");
-		/* TODO
-		 * free(message);
-		 */
-//		return;
-	}
+	DEBUG_2("1. command: %s\n", parsed_message[COMMAND] ? parsed_message[COMMAND] : "NULL");
+	DEBUG_2("2. tag    : %s\n", parsed_message[TAG] ? parsed_message[TAG] : "NULL");
+	DEBUG_2("3. extra  : %s\n", parsed_message[EXTRA] ? parsed_message[EXTRA] : "NULL");
 
 	if (!strcmp(parsed_message[COMMAND], "START")) {
 		DEBUG_3("start\n");
@@ -435,8 +420,6 @@ int handle_cmd_client(int client) {
 		eprintf("Unknown COMMAND: %s\n",parsed_message[COMMAND]);
 	}
 	return 1;
-//	shutdown(client, SHUT_RDWR);
-//	close(client);
 	/* TODO
 	 * free(message);
 	 */
@@ -586,18 +569,6 @@ int main(int argc, char *argv[], char *envp[]) {
 	}
 
 #endif
-
-	global_connection_key = generate_connection_key();
-	printf("KEY:%c%c%c%c%c%c%c%c\n", global_connection_key[0], 
-		global_connection_key[1],
-		global_connection_key[2],
-		global_connection_key[3],
-		global_connection_key[4],
-		global_connection_key[5],
-		global_connection_key[6],
-		global_connection_key[7]);
-	fflush(stdout);
-	
 	pthread_join(global_cmd_server_thread, &retval);
 
 	DEBUG_3("Shutting down properly.\n");
