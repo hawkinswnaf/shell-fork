@@ -197,9 +197,19 @@ public class Shell implements Runnable {
 		BufferedReader mOutputFromForkReader;
 
 		public ShellIo(OutputStream inputToFork, InputStream outputFromFork) {
-				mOutputFromForkReader=new BufferedReader(new InputStreamReader(outputFromFork));
-				mInputToForkWriter=new BufferedWriter(new OutputStreamWriter(inputToFork));
-				mRunning = Shell.ShellRunningStatus.NOTRUNNING;
+			InputStreamReader inputStreamReader;
+			OutputStreamWriter outputStreamWriter;
+
+			mRunning = Shell.ShellRunningStatus.NOTRUNNING;
+			
+			inputStreamReader = new InputStreamReader(outputFromFork);
+			outputStreamWriter = new OutputStreamWriter(inputToFork);
+
+			if (inputStreamReader == null || outputStreamWriter == null)
+				return;
+
+			mOutputFromForkReader=new BufferedReader(inputStreamReader);
+			mInputToForkWriter=new BufferedWriter(outputStreamWriter);
 		}
 
 		public Shell.ShellRunningStatus isRunning() {
@@ -210,6 +220,9 @@ public class Shell implements Runnable {
 			String actualCommand;
 
 			actualCommand = command + "\n";
+
+			if (mInputToForkWriter == null) 
+				throw new IOException("No I/O with fork available!");
 
 			mInputToForkWriter.write(actualCommand, 0, actualCommand.length());
 			mInputToForkWriter.flush();
@@ -283,6 +296,15 @@ public class Shell implements Runnable {
 			}
 			System.err.println("ShellIo.run(): ending");
 			mRunning = Shell.ShellRunningStatus.NOTRUNNING;
+			try {
+				mInputToForkWriter.close();
+				mOutputFromForkReader.close();
+			} catch (IOException e) {
+				/* 
+				 */
+			}
+			mInputToForkWriter = null;
+			mOutputFromForkReader = null; 
 		}
 	}
 
