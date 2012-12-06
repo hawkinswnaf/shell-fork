@@ -3,6 +3,7 @@ package net.commotionwireless.shell;
 import java.io.InputStream;
 import java.io.OutputStream;
 import java.io.BufferedReader;
+import java.io.BufferedWriter;
 import java.io.IOException;
 import java.lang.Process;
 import java.io.InputStreamReader;
@@ -31,8 +32,8 @@ import java.util.Vector;
 public class Shell implements Runnable {
 	private static Shell mShell = null;
 	private Process mProcess = null;
-	private InputStream mErrorStream, mInputStream;
-	private OutputStream mOutputStream;
+	private InputStream mErrorStream, mOutputFromForkStream;
+	private OutputStream mInputToForkStream;
 	private ShellIo mShellIo;
 	private ShellRunningStatus mRunning;
 	private Vector<ShellProcess> mProcesses;
@@ -184,63 +185,21 @@ public class Shell implements Runnable {
 		return true;
 	}
 
-	class ShellTerminalMonitor implements Runnable {
-		private InputStream mOutput;
-		private BufferedReader mBr;
-		public ShellTerminalMonitor(InputStream output) {
-			mOutput = output;
-			mBr = new BufferedReader(new InputStreamReader(mOutput), 50);
-		}
-
-		public void run() {
-			System.err.println("ShellTerminalMonitor started.");
-			try {
-				String line;
-				line = mBr.readLine();
-				while (line != null) {
-					String lineContents[] = line.split(":");
-					if (mKey == null &&
-						line.startsWith("KEY:") &&
-						lineContents.length == 2) {
-						mKey = lineContents[1];
-						System.out.println("Setting KEY: " + mKey);
-						synchronized (mKeySignal) {
-							mKeySignal.notifyAll();
-						}
-					}
-					System.out.println("Terminal: " + line);
-					line = mBr.readLine();
-				}
-			} catch (IOException ioEx) {
-				/* error.
-				 */
-				System.err.println("ShellTerminalMonitor.run(): " + ioEx.toString());
-			}
-			System.err.println("ShellTerminalMonitor stopped.");
-		}
-	}
-
 	class ShellIo implements Runnable {
 		InetAddress mHost;
 		int mCommandPort, mOutputPort;
 		ShellRunningStatus mRunning;
+		/*
+		 * these are named wrt to the fork process, 
+		 * not this process.
+		 */
+		BufferedWriter mInputToForkWriter;
+		BufferedReader mOutputFromForkReader;
 
-		public ShellIo(String host, int commandPort, int outputPort) 
-			throws UnknownHostException {
-			mHost = InetAddress.getByName(host);
-			mCommandPort = commandPort;
-			mOutputPort = outputPort;
-			mRunning = Shell.ShellRunningStatus.NOTRUNNING;
-		}
-
-		public ShellIo()
-			throws UnknownHostException {
-			this("127.0.0.1", 5000, 5001);
-		}
-
-		public ShellIo(String host, int commandPort) 
-			throws UnknownHostException {
-			this(host, commandPort, commandPort);
+		public ShellIo(OutputStream inputToFork, InputStream outputFromFork) {
+				mOutputFromForkReader=new BufferedReader(new InputStreamReader(outputFromFork));
+				mInputToForkWriter=new BufferedWriter(new OutputStreamWriter(inputToFork));
+				mRunning = Shell.ShellRunningStatus.NOTRUNNING;
 		}
 
 		public Shell.ShellRunningStatus isRunning() {
@@ -248,28 +207,12 @@ public class Shell implements Runnable {
 		}
 
 		public void sendCommand(String command) throws IOException {
-			Socket commandSocket = null;
-			OutputStream socketOutputStream = null;
-			OutputStreamWriter socketOutputStreamWriter = null;
 			String actualCommand;
 
-			try {
-				commandSocket = new Socket(mHost, mCommandPort);
-			} catch (SecurityException securityEx) {
-				throw new IOException(securityEx.toString());
-			}
+			actualCommand = command + "\n";
 
-			actualCommand = mKey + ":" + command;
-
-			socketOutputStream = commandSocket.getOutputStream();
-			socketOutputStreamWriter = new OutputStreamWriter(socketOutputStream);
-			socketOutputStreamWriter.write(actualCommand, 0, actualCommand.length());
-			
-			socketOutputStreamWriter.flush();
-			socketOutputStreamWriter.close();
-			socketOutputStream.flush();
-			socketOutputStream.close();
-			commandSocket.close();
+			mInputToForkWriter.write(actualCommand, 0, actualCommand.length());
+			mInputToForkWriter.flush();
 		}
 
 		public void run() {
@@ -279,57 +222,22 @@ public class Shell implements Runnable {
 			InputStream socketInputStream = null;
 			BufferedReader socketInputStreamReader = null;
 
-			mRunning = Shell.ShellRunningStatus.ERROR;
-
-		
-			while (connectionTries < maxConnectionTries) {
-				try {
-					outputSocket = new Socket(mHost, mOutputPort);
-					break;
-				} catch (Exception exc) {
-					System.err.println("ShellIo.run:" + exc.toString());
-				}
-				connectionTries++;
-				System.out.println("ShellIo will try again.");
-				try {
-					Thread.sleep(500);
-				} catch (InterruptedException interruptedEx) {
-					/* 
-					 * who cares!
-					 */
-				}
+			mRunning = Shell.ShellRunningStatus.RUNNING;
+			synchronized (mShellIoSignal) {
+				mShellIoSignal.notifyAll();
 			}
-
-			if (outputSocket == null) {
-				System.out.println("ShellIo officially failed.");
-				synchronized (mShellIoSignal) {
-					mShellIoSignal.notifyAll();
-				}
-				return;
-			}
-
-			try {
-				socketInputStream = outputSocket.getInputStream();
-				socketInputStreamReader = new BufferedReader(new InputStreamReader(socketInputStream));
-				mRunning = Shell.ShellRunningStatus.RUNNING;
-				synchronized (mShellIoSignal) {
-					mShellIoSignal.notifyAll();
-				}
-			} catch (IOException ioex) {
-				System.err.println("ShellIo.run:" + ioex.toString());
-				synchronized (mShellIoSignal) {
-					mShellIoSignal.notifyAll();
-				}
-				return;
-			}
-
 			try {
 				String line;
-				line = socketInputStreamReader.readLine();
-				while (line != null) {
+				System.out.println("Waiting for readLine()");
+				do {
 					String lineParts[];
 					String type = null, tag = null, output = null;
 					ShellProcess p = null;
+					
+					line = mOutputFromForkReader.readLine();
+					System.out.println("Done waiting for readLine(): " + line);
+					if (line == null)
+						continue;
 
 					lineParts = line.split(":", 3);
 					if (lineParts.length > 0 && lineParts[0] != null) 
@@ -339,6 +247,14 @@ public class Shell implements Runnable {
 					if (lineParts.length > 2 && lineParts[2] != null)
 						output = lineParts[2];
 
+					/*
+					 * Skip over anything that starts with ERROR: or 
+					 * DEBUG:.
+					 */
+					if (type.equalsIgnoreCase("error") ||
+							type.equalsIgnoreCase("debug"))
+						continue;
+	
 					if (tag != null) {
 							for (ShellProcess ip : mProcesses) {
 								if (ip.getTag().equals(tag)) {
@@ -361,8 +277,7 @@ public class Shell implements Runnable {
 					} else if (type.equalsIgnoreCase("stopped")) {
 						p.stopped();
 					}
-					line = socketInputStreamReader.readLine();
-				}
+				} while (line != null);
 			} catch (IOException ioEx) {
 				System.err.println("ShellIo.run(): " + ioEx.toString());
 			}
@@ -372,6 +287,7 @@ public class Shell implements Runnable {
 	}
 
 	final protected void sendCommand(String command) throws IOException {
+		System.out.println("Sending command: " + command);
 		if (mShellIo != null && 
 			mShellIo.isRunning() == ShellRunningStatus.RUNNING && 
 			mRunning == ShellRunningStatus.RUNNING) {
@@ -383,6 +299,7 @@ public class Shell implements Runnable {
 			System.err.println("mRunning: " + mRunning);
 			throw new IOException("mShellIo and/or Shell are/is not running (Shell.sendCommand()).");
 		}
+		System.out.println("Done sending command.");
 	}
 
 	/**
@@ -409,7 +326,6 @@ public class Shell implements Runnable {
 	}
 
 	public void run() {
-		ShellTerminalMonitor outputMonitor, errorMonitor;
 		Thread outputMonitorThread, errorMonitorThread;
 		Thread shellIoThread;
 
@@ -440,46 +356,16 @@ public class Shell implements Runnable {
 		/*
 		 * Start ./fork terminal io monitoring.
 		 */
-		mInputStream = mProcess.getInputStream();
-		mOutputStream = mProcess.getOutputStream();
+		mOutputFromForkStream = mProcess.getInputStream();
+		mInputToForkStream = mProcess.getOutputStream();
 		mErrorStream = mProcess.getErrorStream();
-
-		(outputMonitorThread = new Thread(outputMonitor = new ShellTerminalMonitor(mInputStream))).start();
-		(errorMonitorThread = new Thread(errorMonitor = new ShellTerminalMonitor(mErrorStream))).start();
-
-		/*
-		 * wait until we get a key.
-		 */
-		while (true) {
-			try {
-				synchronized (mKeySignal) {
-					mKeySignal.wait();
-					if (mKey != null) break; 
-				}
-			} catch (InterruptedException interruptedEx) {
-				/*
-				 */
-			}
-		}
 
 		/*
 		 * Start a connection to ./fork
 		 * to actually gather subprocess
 		 * io.
 		 */
-		try {
-			mShellIo = new ShellIo();
-		} catch (UnknownHostException unknownHostEx) {
-			System.err.println("Shell.run: " + unknownHostEx.toString());
-			mProcess.destroy();
-			mProcess = null;
-			mRunning = ShellRunningStatus.ERROR;
-			synchronized (this) {
-				this.notifyAll();
-			}
-			return;
-		}
-
+		mShellIo = new ShellIo(mInputToForkStream, mOutputFromForkStream);
 		(shellIoThread = new Thread(mShellIo)).start();
 
 		System.err.println("Waiting for ShellIo to start!");

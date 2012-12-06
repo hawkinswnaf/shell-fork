@@ -20,7 +20,7 @@ public class ShellTest {
 	}
 	
 	@AfterClass public static void shellProcessTestStop() {
-		shell.stopShell();	
+		shell.stopShell();
 	}
 
 	@Before public void shellProcessTestBefore() {
