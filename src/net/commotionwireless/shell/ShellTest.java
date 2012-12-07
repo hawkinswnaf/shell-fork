@@ -153,7 +153,7 @@ public class ShellTest {
 		assertTrue("Grep output did not match!", grepDebug.outputMatches());
 		shell.setDebugMonitor(null);
 	}
-
+/*
 	public static void main(String args[]) {
 		ShellTest test = new ShellTest();
 		shellProcessTestSetup();
@@ -163,4 +163,5 @@ public class ShellTest {
 		test.shellProcessTestAfter();
 		shellProcessTestStop();
 	}
+*/
 }
