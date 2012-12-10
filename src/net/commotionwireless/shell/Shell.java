@@ -394,8 +394,8 @@ public class Shell implements Runnable {
 		while (true) {
 			try {
 				synchronized (mShellIoSignal) {
-					mShellIoSignal.wait();
 					if (mShellIo.isRunning() != ShellRunningStatus.NOTRUNNING) break;
+					mShellIoSignal.wait();
 				}
 			} catch (InterruptedException interruptedEx) {
 				/*
