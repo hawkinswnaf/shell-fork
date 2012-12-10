@@ -13,6 +13,7 @@
 do { \
 	pthread_mutex_lock(&global_output_lock); \
 	fprintf(stderr,"ERROR:" __VA_ARGS__); \
+	fflush(stderr); \
 	pthread_mutex_unlock(&global_output_lock); \
 } while (0) 
 
@@ -20,6 +21,7 @@ do { \
 do { \
 	pthread_mutex_lock(&global_output_lock); \
 	fprintf(stdout,"DEBUG:" __VA_ARGS__);\
+	fflush(stdout); \
 	pthread_mutex_unlock(&global_output_lock); \
 } while (0)
 
