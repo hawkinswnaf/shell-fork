@@ -64,7 +64,7 @@ public class ShellProcess {
 	synchronized protected void stopped() {
 		System.out.println(this + ": stopped.\n");
 		mShouldStop = true;
-		this.notifyAll();
+		mShell.stopProcess(this);
 	}
 
 	public String toString() {
