@@ -1,16 +1,8 @@
 package net.commotionwireless.shell;
 
-import java.io.InputStream;
-import java.io.OutputStream;
-import java.io.BufferedReader;
-import java.io.BufferedWriter;
-import java.io.IOException;
-import java.lang.Process;
-import java.io.InputStreamReader;
-import java.io.OutputStreamWriter;
-import java.net.Socket;
+import java.io.*;
 import java.net.InetAddress;
-import java.net.UnknownHostException;
+import java.net.Socket;
 import java.util.Vector;
 
 /**
@@ -317,7 +309,7 @@ public class Shell implements Runnable {
 		}
 		else {
 			System.err.println("mShellIo: " + mShellIo);
-			System.err.println("mShellIo.isRunning(): " + mShellIo.isRunning());
+			System.err.println("mShellIo.isRunning(): " + ((mShellIo != null) ? mShellIo.isRunning() : "N/A"));
 			System.err.println("mRunning: " + mRunning);
 			throw new IOException("mShellIo and/or Shell are/is not running (Shell.sendCommand()).");
 		}
