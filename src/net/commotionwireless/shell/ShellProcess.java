@@ -12,8 +12,8 @@ public class ShellProcess {
 	private String mStag, mCommand;
 	private Shell mShell;
 	private int mTag;
-//	private Handler mHandler;
-	private Object mHandler;
+	private Handler mHandler;
+//	private Object mHandler;
 	private boolean mShouldStop;
 
 	/**
@@ -38,8 +38,8 @@ public class ShellProcess {
 	 * @param handler An Android Handler to notify about output.
 	 * @param tag A tag used by the handler to identify this process.
 	 */
-//	public void setHandler(Handler handler, int tag) {
-	public void setHandler(Object handler, int tag) {
+	public void setHandler(Handler handler, int tag) {
+//	public void setHandler(Object handler, int tag) {
 		mTag = tag;
 		mHandler = handler;
 	}
@@ -57,14 +57,14 @@ public class ShellProcess {
 
 	final protected void sendOutput(String output) {
 		System.out.println(this + ": " + output);
-//		if (mHandler != null) 
-//			mHandler.obtainMessage(mTag, output).sendToTarget();
+		if (mHandler != null) 
+			mHandler.obtainMessage(mTag, output).sendToTarget();
 	}
 
 	synchronized protected void stopped() {
 		System.out.println(this + ": stopped.\n");
 		mShouldStop = true;
-		this.notifyAll();
+		mShell.stopProcess(this);
 	}
 
 	public String toString() {
